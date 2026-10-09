@@ -1,0 +1,45 @@
+{
+  "source": "/home/King/Desktop/QuestController/calibration_recordings/axes_20261001_164759_567248/axes.json",
+  "status": "experimental_low_motion",
+  "method": "Equal-weight orthogonal Procrustes on normalized endpoint displacements; no scale amplification",
+  "quest_to_world_rotation": [
+    [
+      0.5939478300142366,
+      -0.5841374208966986,
+      -0.5531812078600754
+    ],
+    [
+      -0.771236049020238,
+      -0.6091109175027365,
+      -0.1848752197311126
+    ],
+    [
+      -0.22895617902348,
+      0.5364395247249478,
+      -0.8122879442659728
+    ]
+  ],
+  "endpoint_displacements_m": {
+    "forward": [
+      -0.00018999999999991246,
+      -0.00041949999999996157,
+      4.500000000007276e-05
+    ],
+    "right": [
+      0.0008799999999999919,
+      -0.0016289999999999916,
+      -0.0008699999999999264
+    ],
+    "up": [
+      2.0000000000131024e-05,
+      0.0002910000000000412,
+      -0.00017499999999959215
+    ]
+  },
+  "axis_fit_errors_degrees": [
+    17.078692477066095,
+    31.687188117390484,
+    30.304632316994955
+  ],
+  "rotation_validation": "No rotation trials recorded; frame rotation shared with orientation mapping"
+}

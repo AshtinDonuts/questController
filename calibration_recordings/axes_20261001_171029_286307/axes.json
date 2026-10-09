@@ -1,0 +1,211 @@
+{
+  "side": "right",
+  "status": "completed",
+  "errors": [],
+  "events": [
+    {
+      "host_ns": 249964405221032,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "press"
+    },
+    {
+      "host_ns": 249965405253984,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 249974307709177,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "release"
+    },
+    {
+      "host_ns": 249974311449519,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "accepted"
+    },
+    {
+      "host_ns": 249982752588175,
+      "motion": "right",
+      "trial": 2,
+      "phase": "press"
+    },
+    {
+      "host_ns": 249983764875023,
+      "motion": "right",
+      "trial": 2,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 249990458945102,
+      "motion": "right",
+      "trial": 2,
+      "phase": "release"
+    },
+    {
+      "host_ns": 249990459213525,
+      "motion": "right",
+      "trial": 2,
+      "phase": "accepted"
+    },
+    {
+      "host_ns": 249995862318363,
+      "motion": "up",
+      "trial": 3,
+      "phase": "press"
+    },
+    {
+      "host_ns": 249996863297220,
+      "motion": "up",
+      "trial": 3,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 250003861948723,
+      "motion": "up",
+      "trial": 3,
+      "phase": "release"
+    },
+    {
+      "host_ns": 250003862228667,
+      "motion": "up",
+      "trial": 3,
+      "phase": "accepted"
+    }
+  ],
+  "motions": [
+    {
+      "motion": "forward",
+      "instruction": "Move FORWARD (away from your torso), keeping orientation steady.",
+      "trial": 1,
+      "before": {
+        "position": [
+          3.49451,
+          -0.35792650000000004,
+          3.91739
+        ],
+        "orientation_xyzw": [
+          -0.03553141136703509,
+          -0.5053629492088586,
+          -0.04941205338962911,
+          0.8607580960990143
+        ],
+        "position_span": [
+          0.0007199999999998319,
+          0.0013179999999999858,
+          0.0005299999999999194
+        ],
+        "frames": 64
+      },
+      "after": {
+        "position": [
+          3.4936350000000003,
+          -0.360664,
+          3.9184200000000002
+        ],
+        "orientation_xyzw": [
+          -0.035027433483719686,
+          -0.504733800437787,
+          -0.04945917804870371,
+          0.8611450226297542
+        ],
+        "position_span": [
+          0.0005099999999997884,
+          0.0013090000000000046,
+          0.0004900000000001015
+        ],
+        "frames": 36
+      }
+    },
+    {
+      "motion": "right",
+      "instruction": "Move RIGHT, keeping orientation steady.",
+      "trial": 2,
+      "before": {
+        "position": [
+          3.493615,
+          -0.360368,
+          3.918565
+        ],
+        "orientation_xyzw": [
+          -0.03543861502419633,
+          -0.5054784783687131,
+          -0.049501244437419774,
+          0.8606889682109328
+        ],
+        "position_span": [
+          0.0007399999999999629,
+          0.0024399999999999977,
+          0.0010200000000000209
+        ],
+        "frames": 64
+      },
+      "after": {
+        "position": [
+          3.49329,
+          -0.360743,
+          3.91878
+        ],
+        "orientation_xyzw": [
+          -0.035220729395031715,
+          -0.5052368288535743,
+          -0.04976928944137345,
+          0.8608240238283316
+        ],
+        "position_span": [
+          0.0005100000000002325,
+          0.0015120000000000133,
+          0.0004900000000001015
+        ],
+        "frames": 37
+      }
+    },
+    {
+      "motion": "up",
+      "instruction": "Move UP, keeping orientation steady.",
+      "trial": 3,
+      "before": {
+        "position": [
+          3.49357,
+          -0.361481,
+          3.91874
+        ],
+        "orientation_xyzw": [
+          -0.03520772715268392,
+          -0.5054280180194228,
+          -0.04967297569439893,
+          0.8607180142183618
+        ],
+        "position_span": [
+          0.000780000000000225,
+          0.0020959999999999868,
+          0.0005899999999998684
+        ],
+        "frames": 63
+      },
+      "after": {
+        "position": [
+          3.49369,
+          -0.35918,
+          3.9186
+        ],
+        "orientation_xyzw": [
+          -0.03525439795161282,
+          -0.505504384981458,
+          -0.049291918223481945,
+          0.8606933251745362
+        ],
+        "position_span": [
+          0.000640000000000196,
+          0.0011649999999999716,
+          0.0005099999999997884
+        ],
+        "frames": 37
+      }
+    }
+  ],
+  "note": "Grip-held samples only. Rejected trials remain in raw data with trial IDs. No mapping applied."
+}

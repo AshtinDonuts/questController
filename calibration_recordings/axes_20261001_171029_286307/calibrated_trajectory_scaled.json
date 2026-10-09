@@ -1,0 +1,29 @@
+{
+  "mapping": "calibration_recordings/axes_20261001_164759_567248/experimental_calibration.json",
+  "trials": [
+    {
+      "motion": "forward",
+      "translation_scale": 81.19863729613523,
+      "tracking_rebases": 0,
+      "peak_target_m": 0.30000000000000004,
+      "peak_achieved_m": 0.2630322225291917,
+      "final_position_error_m": 0.04801821869251234
+    },
+    {
+      "motion": "right",
+      "translation_scale": 143.17410000428174,
+      "tracking_rebases": 8,
+      "peak_target_m": 0.39316675616637103,
+      "peak_achieved_m": 0.3279435163856551,
+      "final_position_error_m": 0.026796140064652564
+    },
+    {
+      "motion": "up",
+      "translation_scale": 89.94386735826122,
+      "tracking_rebases": 0,
+      "peak_target_m": 0.30000000000000004,
+      "peak_achieved_m": 0.20702577237751776,
+      "final_position_error_m": 0.013761925966787231
+    }
+  ]
+}

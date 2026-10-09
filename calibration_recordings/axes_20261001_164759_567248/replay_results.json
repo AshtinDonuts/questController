@@ -1,0 +1,23 @@
+{
+  "mapping": "existing uncalibrated mapping",
+  "trials": [
+    {
+      "motion": "forward",
+      "peak_target_m": 0.002028341440685053,
+      "peak_achieved_m": 0.006245586996035451,
+      "final_position_error_m": 0.004347501320315931
+    },
+    {
+      "motion": "right",
+      "peak_target_m": 0.008809455374766888,
+      "peak_achieved_m": 0.010248729150514509,
+      "final_position_error_m": 0.003308906265800499
+    },
+    {
+      "motion": "up",
+      "peak_target_m": 0.0012460100320622841,
+      "peak_achieved_m": 0.004428204858881496,
+      "final_position_error_m": 0.001889004473424929
+    }
+  ]
+}

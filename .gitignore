@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.log
+*.mp4
+*.avi
+*.bag
+aloha_neutral.png
+aloha_neutral.ppm

@@ -1,0 +1,23 @@
+{
+  "mapping": "calibration_recordings/axes_20261001_164759_567248/experimental_calibration.json",
+  "trials": [
+    {
+      "motion": "forward",
+      "peak_target_m": 0.002028341440685029,
+      "peak_achieved_m": 0.005503086479151095,
+      "final_position_error_m": 0.0022109851614658007
+    },
+    {
+      "motion": "right",
+      "peak_target_m": 0.008809455374766888,
+      "peak_achieved_m": 0.009616099523264296,
+      "final_position_error_m": 0.0012332721286026764
+    },
+    {
+      "motion": "up",
+      "peak_target_m": 0.0012460100320622718,
+      "peak_achieved_m": 0.004675636504741525,
+      "final_position_error_m": 0.002587316628575641
+    }
+  ]
+}

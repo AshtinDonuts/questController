@@ -1,0 +1,274 @@
+{
+  "side": "right",
+  "status": "completed",
+  "errors": [],
+  "events": [
+    {
+      "host_ns": 248610704255211,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "press"
+    },
+    {
+      "host_ns": 248610985799517,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "release"
+    },
+    {
+      "host_ns": 248610985806807,
+      "motion": "forward",
+      "trial": 1,
+      "phase": "rejected",
+      "reason": "Too short or insufficient endpoint poses"
+    },
+    {
+      "host_ns": 248660595642704,
+      "motion": "forward",
+      "trial": 2,
+      "phase": "press"
+    },
+    {
+      "host_ns": 248660831435830,
+      "motion": "forward",
+      "trial": 2,
+      "phase": "release"
+    },
+    {
+      "host_ns": 248660831444110,
+      "motion": "forward",
+      "trial": 2,
+      "phase": "rejected",
+      "reason": "Too short or insufficient endpoint poses"
+    },
+    {
+      "host_ns": 248676607159662,
+      "motion": "forward",
+      "trial": 3,
+      "phase": "press"
+    },
+    {
+      "host_ns": 248677608420138,
+      "motion": "forward",
+      "trial": 3,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 248677858751120,
+      "motion": "forward",
+      "trial": 3,
+      "phase": "release"
+    },
+    {
+      "host_ns": 248677858768730,
+      "motion": "forward",
+      "trial": 3,
+      "phase": "rejected",
+      "reason": "Too short or insufficient endpoint poses"
+    },
+    {
+      "host_ns": 248689092303726,
+      "motion": "forward",
+      "trial": 4,
+      "phase": "press"
+    },
+    {
+      "host_ns": 248690094660711,
+      "motion": "forward",
+      "trial": 4,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 248693094593704,
+      "motion": "forward",
+      "trial": 4,
+      "phase": "release"
+    },
+    {
+      "host_ns": 248693102237756,
+      "motion": "forward",
+      "trial": 4,
+      "phase": "accepted"
+    },
+    {
+      "host_ns": 248703344292371,
+      "motion": "right",
+      "trial": 5,
+      "phase": "press"
+    },
+    {
+      "host_ns": 248704358285782,
+      "motion": "right",
+      "trial": 5,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 248706357767215,
+      "motion": "right",
+      "trial": 5,
+      "phase": "release"
+    },
+    {
+      "host_ns": 248706357962217,
+      "motion": "right",
+      "trial": 5,
+      "phase": "accepted"
+    },
+    {
+      "host_ns": 248714732909412,
+      "motion": "up",
+      "trial": 6,
+      "phase": "press"
+    },
+    {
+      "host_ns": 248715746171040,
+      "motion": "up",
+      "trial": 6,
+      "phase": "move_cue"
+    },
+    {
+      "host_ns": 248718594244094,
+      "motion": "up",
+      "trial": 6,
+      "phase": "release"
+    },
+    {
+      "host_ns": 248718594438867,
+      "motion": "up",
+      "trial": 6,
+      "phase": "accepted"
+    }
+  ],
+  "motions": [
+    {
+      "motion": "forward",
+      "instruction": "Move FORWARD (away from your torso), keeping orientation steady.",
+      "trial": 4,
+      "before": {
+        "position": [
+          3.03681,
+          -0.3836105,
+          4.252295
+        ],
+        "orientation_xyzw": [
+          -0.03367718354605583,
+          -0.5498648300692589,
+          -0.05275330678071442,
+          0.8329056068967239
+        ],
+        "position_span": [
+          0.000780000000000225,
+          0.001363000000000003,
+          0.0006500000000002615
+        ],
+        "frames": 64
+      },
+      "after": {
+        "position": [
+          3.03662,
+          -0.38403,
+          4.25234
+        ],
+        "orientation_xyzw": [
+          -0.037338969396902635,
+          -0.5484508895798403,
+          -0.05148752866286761,
+          0.8337601573594171
+        ],
+        "position_span": [
+          0.0009000000000001229,
+          0.0021639999999999993,
+          0.0003600000000005821
+        ],
+        "frames": 37
+      }
+    },
+    {
+      "motion": "right",
+      "instruction": "Move RIGHT, keeping orientation steady.",
+      "trial": 5,
+      "before": {
+        "position": [
+          3.02328,
+          -0.37647600000000003,
+          4.26241
+        ],
+        "orientation_xyzw": [
+          -0.03342562511906884,
+          -0.5529814406270598,
+          -0.05180260669740457,
+          0.8309094415157406
+        ],
+        "position_span": [
+          0.007500000000000284,
+          0.003942999999999974,
+          0.006050000000000111
+        ],
+        "frames": 64
+      },
+      "after": {
+        "position": [
+          3.02416,
+          -0.378105,
+          4.26154
+        ],
+        "orientation_xyzw": [
+          -0.031991442024415305,
+          -0.5416894617776106,
+          -0.052723245689215166,
+          0.8383133364082908
+        ],
+        "position_span": [
+          0.00238999999999967,
+          0.0033969999999999834,
+          0.0013500000000004064
+        ],
+        "frames": 37
+      }
+    },
+    {
+      "motion": "up",
+      "instruction": "Move UP, keeping orientation steady.",
+      "trial": 6,
+      "before": {
+        "position": [
+          3.03294,
+          -0.381595,
+          4.255235
+        ],
+        "orientation_xyzw": [
+          -0.033738293911438774,
+          -0.5506821174400689,
+          -0.053257994227040965,
+          0.8323309137596656
+        ],
+        "position_span": [
+          0.0008799999999999919,
+          0.0017980000000000218,
+          0.0005299999999994753
+        ],
+        "frames": 64
+      },
+      "after": {
+        "position": [
+          3.03296,
+          -0.381304,
+          4.25506
+        ],
+        "orientation_xyzw": [
+          -0.033194250955096656,
+          -0.547710769251978,
+          -0.04863835615105728,
+          0.8345928648149348
+        ],
+        "position_span": [
+          0.000720000000000276,
+          0.001507000000000036,
+          0.0008900000000000574
+        ],
+        "frames": 37
+      }
+    }
+  ],
+  "note": "Grip-held samples only. Rejected trials remain in raw data with trial IDs. No mapping applied."
+}
