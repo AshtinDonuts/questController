@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 from pathlib import Path
+from importlib.metadata import version
 import signal
 import time
 
@@ -57,7 +58,9 @@ def arm_state(arm, controller):
                 target_position=arm.target_p.tolist(),
                 target_orientation_xyzw=Rotation.from_matrix(arm.target_r).as_quat().tolist(),
                 calibrated=arm.calibrated, tracking=arm.tracking, engaged=arm.engaged,
-                ik_ok=arm.ik_ok, clipped=arm.clipped, message=arm.message,
+                ik_ok=arm.ik_ok, ik_solved=arm.ik_solved, ik_reason=arm.ik_reason,
+                ik_position_error_m=arm.ik_position_error, ik_rotation_error_rad=arm.ik_rotation_error,
+                ik_joint_speed_rad_s=arm.ik_joint_speed, clipped=arm.clipped, message=arm.message,
                 controller=None if controller is None else dict(position=controller.position.tolist(),
                     quaternion=controller.quaternion.tolist(), grip=controller.squeeze,
                     trigger=controller.trigger, received_t=controller.received_t))
@@ -75,15 +78,17 @@ def main():
     parser.add_argument('--rotation-scale', type=float, default=1.0)
     parser.add_argument('--max-linear-speed', type=float, default=0.35, help='metres/sec')
     parser.add_argument('--max-angular-speed', type=float, default=160, help='degrees/sec')
+    parser.add_argument('--max-joint-speed', type=float, default=60, help='arm joint speed limit in degrees/sec')
     parser.add_argument('--output', type=Path, help='new session directory; MP4 and telemetry always saved')
     args = parser.parse_args()
-    for key in ('scale', 'rotation_scale', 'max_linear_speed', 'max_angular_speed'):
+    for key in ('scale', 'rotation_scale', 'max_linear_speed', 'max_angular_speed', 'max_joint_speed'):
         if not np.isfinite(getattr(args, key)) or getattr(args, key) <= 0:
             parser.error(f'{key} must be finite and positive')
     if not np.isfinite(args.seconds) or args.seconds < 0:
         parser.error('seconds must be finite and >=0')
     config = Config(scale=args.scale, rotation_scale=args.rotation_scale,
-                    linear_speed=args.max_linear_speed, angular_speed=np.deg2rad(args.max_angular_speed))
+                    linear_speed=args.max_linear_speed, angular_speed=np.deg2rad(args.max_angular_speed),
+                    joint_speed=np.deg2rad(args.max_joint_speed))
     model_path = MODEL if args.scene == 'single' else ROOT / 'scenes/dual_viperx_scene.xml'
     model = mujoco.MjModel.from_xml_path(str(model_path))
     data = mujoco.MjData(model)
@@ -116,6 +121,7 @@ def main():
                 viewer.cam.fixedcamid = model.camera('teleoperator_pov').id
         recording = Recording(directory, model, 30, dict(config=asdict(config), scene=args.scene,
                               upstream_commit=UPSTREAM_COMMIT, synthetic=args.demo,
+                              ik_backend='mink', mink_version=version('mink'), qp_solver='daqp',
                               started=datetime.now().astimezone().isoformat()))
         print(f'MP4: {directory.resolve() / "session.mp4"}', flush=True)
         print('Align: right controller -Z forward (blue +Z backward), release grips, press left X. Each grip moves its matching arm.', flush=True)

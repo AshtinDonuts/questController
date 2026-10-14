@@ -1,14 +1,14 @@
-# Quest browser → single-arm ViperX simulator
+# Quest browser → single or dual ViperX simulator
 
 This is the updated teleoperation path, adapted from [StairVLA's PiperX teleoperation](https://github.com/Dicomsky/StairVLA/tree/c128495cf8c9882734d2d8e21ed7db3435d96920/examples/PiperX/teleoperation). It uses the Quest browser's tracked WebXR grip poses and a local HTTPS/WebSocket server. The existing ViperX model and joint limits remain the robot model. No CAN driver, physical robot command, old headset app, or ROS bridge is used by this path.
 
 ## Install and launch
 
-From the project root, use the existing `quest_ros` Conda environment (Python 3.12, NumPy and MuJoCo). Additional dependencies are SciPy and websockets, declared in `requirements-webxr.txt`. ffmpeg and openssl must be on PATH. They are already available on this workstation, and the Python dependencies were installed during implementation.
+From the project root, use the existing `quest_ros` Conda environment (Python 3.12, NumPy and MuJoCo). Additional dependencies are SciPy, websockets, Mink and its DAQP solver, declared in `requirements-webxr.txt`. ffmpeg and openssl must be on PATH. They are already available on this workstation, and the Python dependencies were installed during implementation.
 
 For a fresh environment with pip:
 
-home/King/miniconda3/bin/pip --python /home/King/miniconda3/envs/quest_ros/bin/python install -r requirements-webxr.txthome/King/miniconda3/bin/pip --python /home/King/miniconda3/envs/quest_ros/bin/python install -r requirements-webxr.txt```bash
+```bash
 conda run -n quest_ros python -m pip install -r requirements-webxr.txt
 ```
 
@@ -66,7 +66,7 @@ Every run saves a timestamped folder under `teleop_sessions/`, printed at startu
 
 ```bash
 conda run -n quest_ros --no-capture-output python -m webxr_teleop.run --headless --demo
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 conda run -n quest_ros python -m pytest tests/test_webxr_teleop.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 conda run -n quest_ros python -m pytest tests/test_webxr_teleop.py tests/test_webxr_dual.py tests/test_mink_ik.py -q
 node tests/test_webxr_client.cjs
 ```
 
@@ -80,7 +80,7 @@ Pinned source: `Dicomsky/StairVLA`, commit `c128495cf8c9882734d2d8e21ed7db3435d9
 
 - `server.py` is adapted from `vr_server.py`: retained local HTTPS/WSS/TLS, bundled asset serving and haptic/status protocol; added explicit tracking validation, quaternion validation, single-client ownership and reset generations.
 - `web/` comes from the upstream teleoperation frontend, including offline A-Frame/controller/font assets and their notices. Modified for the ViperX frame, tracked `XRFrame.getPose(gripSpace, referenceSpace)` acquisition, tracking-loss packets, reference resets, and local session controls.
-- `control.py` adapts the upstream mapping/clutch/limits/home/IK-rejection workflow to ViperX MuJoCo. It uses metre units, SO(3) orientation filtering, gravity-preserving one-button heading calibration, and regrip after tracking loss/jumps. It does not use the incompatible PiperX URDF or CAN actuator driver.
+- `control.py` adapts the upstream mapping/clutch/limits/home workflow to ViperX MuJoCo. It uses metre units, SO(3) orientation filtering, gravity-preserving one-button heading calibration, and regrip after tracking loss/jumps. It does not use the incompatible PiperX URDF or CAN actuator driver.
 - `recording.py` and `run.py` implement the simulator integration and MP4 session/episode workflow. LeRobot camera-dataset export and real PiperX hardware support were not imported because this project operates the ViperX simulation.
 
 See `LICENSE-StairVLA`, `NOTICE-StairVLA`, `THIRD_PARTY_NOTICES.md`, and `web/vendor/` for retained attribution and asset licenses. The source model has its existing Menagerie license.
@@ -111,3 +111,50 @@ Render the independent right-only, left-only, and simultaneous-motion check:
 ```bash
 MUJOCO_GL=egl conda run -n quest_ros --no-capture-output python -m webxr_teleop.run --scene dual --headless --demo
 ```
+
+## Mink differential IK
+
+Both scenes use Mink 1.3.0 with DAQP. The robot kinematics still come from the ViperX
+MuJoCo model. Each arm has an EEF frame task (position weight 1, orientation 0.25),
+velocity damping (0.02), and a modest posture task (0.005) referenced to that arm's
+pose when its grip engages. Other-arm joints and fingers have zero IK velocity;
+only the selected arm's six joint positions are written back. Trigger control is separate.
+
+The hard default joint-speed limit is **60 degrees/second**, configurable with
+`--max-joint-speed`. Joint position limits retain the 0.02 rad margin. Each control
+frame integrates exactly one Mink velocity over its elapsed time (capped at 50 ms),
+so solver iterations cannot multiply the permitted joint motion. Homing remains
+8 degrees/second, or the configured joint limit if lower.
+
+Near singularities or unreachable targets, a valid bounded step is accepted even
+when some EEF tracking error remains. This avoids the old all-or-nothing pose solve.
+`ik_solved` reports whether a valid step was produced; `ik_ok` additionally requires
+position error <=5 mm and orientation error <=5 degrees. The UI reports tracking
+limited while a valid step has larger error. Numerical failure holds the current
+arm command. Release, tracking timeout and recenter still stop motion and require
+regripping as before. This is kinematic control; collision avoidance and joint
+acceleration/jerk constraints are not enabled.
+
+Each telemetry arm now includes measured position/orientation error, maximum
+commanded joint speed, and solve status/reason. Manifests record the Mink version
+and backend. Tests replay all 780 frames of the original wrist-flip trajectory,
+including its 13–16 s segment, through the production solver. The fixture preserves
+exact floating-point target values and the source SHA-256 in a compressed JSON file.
+It also runs each recorded arm trajectory on the single-arm model, with the base offset removed.
+
+To render the exact recorded targets (a new output directory is required):
+
+```bash
+MUJOCO_GL=egl conda run -n quest_ros --no-capture-output python -m webxr_teleop.replay_ik \
+  tests/fixtures/dual_wrist_flip_targets.json.gz --output teleop_sessions/mink_replay
+```
+
+The replay uses an initial posture reference and fixed recorded targets. The live
+controller instead resets its posture reference and relative target anchor on each
+new grip; live synthetic demos and TLS/WebSocket tests cover that separate path.
+The original diagnostic experiment in `experiments/ik_continuity_replay.py` is not
+the live IK implementation.
+
+References: [Mink tasks](https://kevinzakka.github.io/mink/api/tasks.html),
+[limits](https://kevinzakka.github.io/mink/api/limits.html), and
+[ALOHA example](https://github.com/kevinzakka/mink/blob/main/examples/arm_aloha.py).

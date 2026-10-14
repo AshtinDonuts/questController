@@ -60,7 +60,11 @@ def test_translation_axis_gain_and_speed(arm, vr, world):
         arm.step(None, controller(np.array([0,1.2,-0.4])+offset, grip=True, t=t), t, 1/30)
         assert np.linalg.norm(arm.target_p-previous) <= arm.cfg.linear_speed/30 + 1e-9
         previous = arm.target_p.copy()
-        assert arm.ik_ok
+        # Differential IK may briefly lag while honoring the joint-speed cap.
+        assert arm.ik_solved
+        assert arm.ik_position_error < .006
+        assert arm.ik_joint_speed <= arm.cfg.joint_speed+1e-7
+    assert arm.ik_ok
     actual, _ = arm.actual_pose()
     np.testing.assert_allclose(actual-origin, np.array(world)*0.1, atol=0.006)
 
@@ -120,9 +124,9 @@ def test_home_cancel_and_calibration_reset(arm):
     assert not arm.homing
 
 
-def test_bad_ik_holds_joint_command_and_gripper_disconnect(arm):
+def test_invalid_ik_holds_joint_command_and_gripper_disconnect(arm):
     q = arm.data.qpos.copy()
-    assert not arm.solve(np.array([10.,10.,10.]), np.eye(3))
+    assert not arm.solve(np.array([np.nan, 0., 0.]), np.eye(3))
     np.testing.assert_array_equal(arm.data.qpos, q)
     arm.step(None, controller(trigger=1), 0, 1/30)
     closed = arm.data.qpos[arm.fingers].copy()
@@ -192,9 +196,10 @@ async def test_https_websocket_reset_disconnect_and_single_owner(tmp_path):
     assert not server._thread.is_alive()
 
 
+@pytest.mark.parametrize('scene', ['single', 'dual'])
 @pytest.mark.parametrize('reset_during_recording', [False, True])
 @async_test
-async def test_live_runner_packets_episode_and_mp4(tmp_path, reset_during_recording):
+async def test_live_runner_packets_episode_and_mp4(tmp_path, reset_during_recording, scene):
     """Exercise the actual entrypoint through TLS/WSS, not a direct mapper call."""
     import subprocess
     import sys
@@ -205,7 +210,7 @@ async def test_live_runner_packets_episode_and_mp4(tmp_path, reset_during_record
     log = tmp_path / 'runner.log'
     with log.open('w') as handle:
         process = subprocess.Popen([sys.executable, '-m', 'webxr_teleop.run', '--headless',
-            '--host', '127.0.0.1', '--port', str(port), '--seconds', '7', '--output', str(output)],
+            '--scene', scene, '--host', '127.0.0.1', '--port', str(port), '--seconds', '7', '--output', str(output)],
             cwd=ROOT, stdout=handle, stderr=subprocess.STDOUT)
         try:
             deadline=time.monotonic()+12
@@ -229,6 +234,9 @@ async def test_live_runner_packets_episode_and_mp4(tmp_path, reset_during_record
                     left['buttons']['x']=.2<t<.4
                     right['buttons']['a']=(.6<t<.8 or 1.0<t<1.2 or 4.6<t<4.8)
                     right['buttons']['squeeze']=1.5<t<4.4
+                    if scene == 'dual':
+                        left['buttons']['squeeze'] = 1.5<t<4.4
+                        left['position']['z'] = -.4-float(.07*np.clip((t-1.7)/2,0,1))
                     right['position']['x']=float(.07*np.clip((t-1.7)/2,0,1))
                     await ws.send(json.dumps({'type':'controllers','reference_epoch':int(reset_during_recording and t>3.5),'left':left,'right':right}))
                     await asyncio.sleep(1/60)
@@ -245,7 +253,10 @@ async def test_live_runner_packets_episode_and_mp4(tmp_path, reset_during_record
         assert any(e['saved'] for e in manifest['episodes'])
     rows=[json.loads(s) for s in (output/'telemetry.jsonl').read_text().splitlines()]
     assert any(r['engaged'] for r in rows)
-    assert max(r['position'][0] for r in rows)>.05
+    assert max(r['position'][0] for r in rows)-rows[0]['position'][0]>.05
+    if scene == 'dual':
+        assert max(r['arms']['left']['position'][1] for r in rows)-rows[0]['arms']['left']['position'][1]>.05
+    assert manifest['ik_backend'] == 'mink'
     assert not rows[-1]['tracking'] and not rows[-1]['engaged']
     probe=subprocess.check_output(['ffprobe','-v','error','-show_entries','stream=nb_frames',
                                    '-of','json',str(output/'session.mp4')],text=True)

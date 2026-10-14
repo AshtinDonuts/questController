@@ -61,7 +61,7 @@ function formatTime(seconds) {
 function warnings() {
   const out = [];
   if (status.tracking === false) out.push('right controller not tracked');
-  if (status.ik_ok === false) out.push('target out of reach');
+  if (status.ik_ok === false) out.push('tracking limited');
   if (status.clipped) out.push('workspace limit');
   if (status.encoder_backlog > 30) out.push('video encoder falling behind');
   return out;

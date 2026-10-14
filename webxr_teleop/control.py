@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import math
 import mujoco
 import numpy as np
-from scipy.optimize import least_squares
+from .mink_ik import MinkIK
 from scipy.spatial.transform import Rotation
 
 JOINTS = ('waist', 'shoulder', 'elbow', 'forearm_roll', 'wrist_angle', 'wrist_rotate')
@@ -24,6 +24,9 @@ class Config:
     position_deadband: float = 0.002
     rotation_deadband: float = math.radians(1)
     max_jump: float = 0.12
+    joint_speed: float = math.radians(60)
+    ik_damping: float = 0.02
+    ik_posture_cost: float = 0.005
     home_speed: float = math.radians(8)
 
 
@@ -43,6 +46,11 @@ class Teleop:
         self.bounds[1] -= 0.02
         self.site = model.site(prefix + 'gripper').id
         self.scratch = mujoco.MjData(model)
+        self.ik = MinkIK(model, data, self.joints, self.site, joint_speed=self.cfg.joint_speed,
+                         damping_cost=self.cfg.ik_damping, posture_cost=self.cfg.ik_posture_cost)
+        self.ik_position_error = self.ik_rotation_error = self.ik_joint_speed = 0.0
+        self.ik_solved = True
+        self.ik_reason = ''
         self.home = data.qpos[self.qids].copy()
         self.base_offset = data.xpos[model.body(prefix + 'base_link').id].copy()
         self.base_offset[2] = 0  # Preserve the single-arm world-height limits.
@@ -70,6 +78,9 @@ class Teleop:
         self.clipped = False
         self.ik_ok = True
         self.target_p, self.target_r = self.actual_pose()
+        self.ik_position_error = self.ik_rotation_error = self.ik_joint_speed = 0.0
+        self.ik_solved = True
+        self.ik_reason = ''
         self.last_hand = None
         self.last_stamp = None
 
@@ -102,23 +113,16 @@ class Teleop:
         self.homing = True
         self.message = 'Returning home; teleop paused.'
 
-    def solve(self, p, r):
-        current = self.data.qpos[self.qids].copy()
-        self.scratch.qpos[:] = self.data.qpos
-        def residual(q):
-            self.scratch.qpos[self.qids] = q
-            mujoco.mj_forward(self.model, self.scratch)
-            pos = self.scratch.site_xpos[self.site]
-            rot = self.scratch.site_xmat[self.site].reshape(3, 3)
-            return np.r_[pos - p, 0.25 * Rotation.from_matrix(r @ rot.T).as_rotvec()]
-        result = least_squares(residual, current, bounds=self.bounds, max_nfev=35,
-                               ftol=1e-5, xtol=1e-5, gtol=1e-5)
-        error = residual(result.x)
-        if np.linalg.norm(error[:3]) > 0.005 or np.linalg.norm(error[3:]) / 0.25 > math.radians(5):
-            return False
-        self.data.qpos[self.qids] = result.x
-        self.data.ctrl[self.aids] = result.x
-        return True
+    def solve(self, p, r, dt=1/30):
+        result = self.ik.advance(self.data, p, r, dt)
+        self.ik_solved = result.accepted
+        self.ik_reason = result.reason
+        self.ik_position_error, self.ik_rotation_error = result.position_error, result.rotation_error
+        self.ik_joint_speed = result.joint_speed
+        self.ik_ok = result.accepted and result.position_error <= 0.005 and result.rotation_error <= math.radians(5)
+        if result.accepted:
+            self.data.ctrl[self.aids] = self.data.qpos[self.qids]
+        return result.accepted
 
     def step(self, left, right, now, dt, allow_alignment=True):
         self.events = []
@@ -141,7 +145,8 @@ class Teleop:
             self.message = 'Home cancelled; release grip before moving.'
         if self.homing:
             q = self.data.qpos[self.qids]
-            q = q + np.clip(self.home - q, -self.cfg.home_speed*dt, self.cfg.home_speed*dt)
+            speed = min(self.cfg.home_speed, self.cfg.joint_speed)
+            q = q + np.clip(self.home - q, -speed*dt, speed*dt)
             self.data.qpos[self.qids] = q
             self.data.ctrl[self.aids] = q
             mujoco.mj_forward(self.model, self.data)
@@ -171,6 +176,7 @@ class Teleop:
             self.message = 'Release grip and align with left X before moving.'
             return
         if not self.engaged:
+            self.ik.set_reference(self.data.qpos)
             self.hand_p = right.position.copy()
             self.hand_r = Rotation.from_quat(right.quaternion).as_matrix()
             self.origin_p, self.origin_r = self.actual_pose()
@@ -210,12 +216,13 @@ class Teleop:
         rv *= min(alpha, self.cfg.angular_speed*dt/max(rn, 1e-12))
         p = self.target_p + dp
         r = Rotation.from_rotvec(rv).as_matrix() @ self.target_r
-        self.ik_ok = self.solve(p, r)
-        if self.ik_ok:
+        accepted = self.solve(p, r, dt)
+        if accepted:
             self.target_p, self.target_r = p, r
-            self.message = 'Workspace limit reached.' if self.clipped else f'Following {self.side} controller.'
+            self.message = ('Tracking limited near a singularity, joint limit, or unreachable pose.' if not self.ik_ok else
+                            'Workspace limit reached.' if self.clipped else f'Following {self.side} controller.')
         else:
-            self.message = 'Target out of reach; holding last reachable pose.'
+            self.message = 'IK solve failed; holding joint command.'
         self.data.qvel[:] = 0
         mujoco.mj_forward(self.model, self.data)
 

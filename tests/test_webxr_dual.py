@@ -37,8 +37,11 @@ def test_matching_hand_moves_only_matching_arm(arms, side):
         inputs[side] = hand(t, position=(.1*min(i/60, 1), 1.2, -.4), grip=True, trigger=1)
         for arm in arms.values():
             arm.step(inputs['left'], inputs['right'], t, 1/30)
-        assert active.ik_ok
+        assert active.ik_solved
+        assert active.ik_position_error < .006
+        assert active.ik_joint_speed <= active.cfg.joint_speed+1e-7
         np.testing.assert_array_equal(other.data.qpos[other.qids], fixed)
+    assert active.ik_ok
     np.testing.assert_allclose(active.actual_pose()[0]-start, [.1, 0, 0], atol=.006)
     assert active.data.ctrl[active.gripper] < other.data.ctrl[other.gripper]
 
