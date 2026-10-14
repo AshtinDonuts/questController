@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>ViperX Simulator Teleoperation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <!-- A-Frame and the assets it would fetch from its CDN (controller models, font) are bundled. -->
+    <script>window.AFRAME_CDN_ROOT = "vendor/cdn/";</script>
+    <script src="vendor/aframe.min.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header>
+        <div>
+          <h1>ViperX Simulator Teleoperation</h1>
+          <p class="subtitle">Quest browser → single-arm MuJoCo</p>
+        </div>
+        <span id="connection" class="pill pill-off">Connecting…</span>
+      </header>
+
+      <section class="card status-card" id="statusCard">
+        <div class="status-top">
+          <span id="phase" class="phase phase-idle">—</span>
+          <span id="timer" class="timer"></span>
+        </div>
+        <div id="hint" class="hint">Waiting for the robot…</div>
+        <div class="status-grid">
+          <div><span class="label">Episode</span><span id="episode">—</span></div>
+          <div><span class="label">Saved</span><span id="saved">—</span></div>
+          <div class="wide"><span class="label">Task</span><span id="task">—</span></div>
+        </div>
+        <div class="flags">
+          <span id="flagTracking" class="flag">Controller</span>
+          <span id="flagDeadman" class="flag">Grip</span>
+          <span id="flagGripper" class="flag">Gripper</span>
+          <span id="flagIk" class="flag">IK</span>
+        </div>
+        <div id="message" class="message"></div>
+      </section>
+
+      <button id="enterXr" class="enter-xr" disabled>Enter VR</button>
+      <p id="xrNote" class="note"></p>
+
+      <section class="card">
+        <h2>Controls</h2>
+        <table class="controls">
+          <tr><th>Grip (hold)</th><td>Move the matching arm (left grip in dual mode). Release to re-position your hand ("clutch").</td></tr>
+          <tr><th>Trigger</th><td>Close the matching gripper while held.</td></tr>
+          <tr><th>Right A</th><td>Next step: move home → start recording → save episode.</td></tr>
+          <tr><th>Right B</th><td>Discard the episode being recorded.</td></tr>
+          <tr><th>Left Y</th><td>Slowly move all active arms to the home pose.</td></tr>
+          <tr><th>Left X</th><td>Align the frame: release both grips (dual mode); hold the right controller naturally: red X right, green Y up, <b style="color:#5555ff">blue +Z backward</b> (−Z forward along the arm's reach), then press. World axes: X right, Y forward, Z up.</td></tr>
+          <tr><th>Right stick click</th><td>Show / hide the alignment aids: each active gripper’s orientation (translucent axes at its controller) and the robot base axes (above the left controller).</td></tr>
+        </table>
+        <p class="note">Terminal: Ctrl+C stops and finalizes the session MP4. A/B manage episode markers; the whole session is recorded.</p>
+      </section>
+    </main>
+
+    <a-scene id="scene" embedded vr-mode-ui="enabled: false" webxr="optionalFeatures: local-floor">
+      <a-entity id="head" camera look-controls="enabled: false" wasd-controls="enabled: false">
+        <a-text id="headsetInfo" value="Headset: ..." position="0 0.2 -0.5" scale="0.05 0.05 0.05" color="yellow" align="center"></a-text>
+      </a-entity>
+
+      <!-- Controller models with RGB (XYZ) axes and a Pos/Rot readout, as in XLeVR. -->
+      <a-entity id="leftHand" oculus-touch-controls="hand: left">
+        <a-text id="leftHandInfo" value="Pos: ..." position="0 0.04 -0.05" rotation="-90 0 0" scale="0.05 0.05 0.05" color="white" align="center"></a-text>
+        <!-- Hints lie flat beyond the readout; hidden while the right grip is held (teleoperating). -->
+        <a-text id="leftHandHint" value="Y: home   X: align" position="0 0.04 -0.09" rotation="-90 0 0" scale="0.05 0.05 0.05" color="#9fd3ff" align="center"></a-text>
+      </a-entity>
+      <a-entity id="rightHand" oculus-touch-controls="hand: right">
+        <a-text id="rightHandInfo" value="Pos: ..." position="0 0.04 -0.05" rotation="-90 0 0" scale="0.05 0.05 0.05" color="white" align="center"></a-text>
+        <a-text id="rightHandHint" value="Connecting..." position="0 0.04 -0.095" rotation="-90 0 0" scale="0.05 0.05 0.05" color="#ffffff" align="center"></a-text>
+      </a-entity>
+
+      <!-- Optional alignment aids (right stick click): simulated gripper orientation and robot base axes. -->
+      <a-entity id="leftGripperGhost" visible="false"></a-entity>
+      <a-entity id="gripperGhost" visible="false"></a-entity>
+      <a-entity id="robotFrame" visible="false"></a-entity>
+    </a-scene>
+  </body>
+</html>

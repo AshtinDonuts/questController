@@ -1,3 +1,16 @@
+# Updated Quest browser teleoperation
+
+The updated single-arm setup uses StairVLA's WebXR browser interface, one-button axis alignment, filtered relative motion, IK reachability checks, headset feedback, and automatic MP4 recording. Start here: [WebXR setup and controls](webxr_teleop/README.md).
+
+```bash
+cd /home/King/Desktop/QuestController
+conda run -n quest_ros --no-capture-output python -m webxr_teleop.run
+```
+
+Open the printed HTTPS URL in the Quest browser. Release right grip, point the drawn red controller X arrow forward, and press left X to align. Then hold right grip to move. This path directly drives the existing single ViperX MuJoCo scene; it does not require the old Quest app or ROS bridge. The sections below document the retained legacy ROS workflow and earlier calibration experiments.
+
+---
+
 # Quest → ALOHA 2 双臂 MuJoCo 仿真
 
 此项目用 Meta Quest 3S 的左右手柄通过 ROS 2 控制 MuJoCo 中的 ALOHA 2 双臂。不会向真机的任何话题发布命令。

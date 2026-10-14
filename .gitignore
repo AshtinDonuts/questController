@@ -6,3 +6,6 @@ __pycache__/
 *.bag
 aloha_neutral.png
 aloha_neutral.ppm
+
+teleop_sessions/
+.pytest_cache/
