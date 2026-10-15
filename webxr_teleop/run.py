@@ -14,8 +14,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from .control import Config, Teleop
+from .planar_limits import PlanarBounds
 from .recording import Recording
-from .frames import draw_eef_frame
+from .frames import draw_eef_frame, draw_planar_bounds
 from .server import ControllerState, VRServer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,7 +59,8 @@ def arm_state(arm, controller):
                 target_position=arm.target_p.tolist(),
                 target_orientation_xyzw=Rotation.from_matrix(arm.target_r).as_quat().tolist(),
                 calibrated=arm.calibrated, tracking=arm.tracking, engaged=arm.engaged,
-                ik_ok=arm.ik_ok, ik_solved=arm.ik_solved, ik_reason=arm.ik_reason,
+                ik_ok=arm.ik_ok, plane_limited=arm.plane_limited,
+                plane_clearance_m=float(np.min(arm.ik.planes.distances(arm.data))), ik_solved=arm.ik_solved, ik_reason=arm.ik_reason,
                 ik_position_error_m=arm.ik_position_error, ik_rotation_error_rad=arm.ik_rotation_error,
                 ik_joint_speed_rad_s=arm.ik_joint_speed, clipped=arm.clipped, message=arm.message,
                 controller=None if controller is None else dict(position=controller.position.tolist(),
@@ -71,6 +73,7 @@ def main():
     parser.add_argument('--scene', choices=('single', 'dual'), default='single')
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', type=int, default=8443)
+    parser.add_argument('--show-plane-bounds', action='store_true', help='show boundary wireframes in viewer and MP4')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--demo', action='store_true', help='synthetic controller check; no network or Quest needed')
     parser.add_argument('--seconds', type=float, default=0, help='0 = until Ctrl+C (demo defaults to 26 seconds)')
@@ -79,6 +82,10 @@ def main():
     parser.add_argument('--max-linear-speed', type=float, default=0.35, help='metres/sec')
     parser.add_argument('--max-angular-speed', type=float, default=160, help='degrees/sec')
     parser.add_argument('--max-joint-speed', type=float, default=60, help='arm joint speed limit in degrees/sec')
+    parser.add_argument('--base-x-range', type=float, nargs=2, default=(-.4,.7), metavar=('MIN','MAX'), help='forward bounds in the fixed robot base frame, metres')
+    parser.add_argument('--base-y-range', type=float, nargs=2, default=(-.5,.5), metavar=('MIN','MAX'), help='lateral bounds in the fixed robot base frame, metres')
+    parser.add_argument('--base-z-max', type=float, default=.75, help='ceiling above each base, metres')
+    parser.add_argument('--plane-clearance', type=float, default=.005, help='link bounding-box clearance from all planes, metres')
     parser.add_argument('--output', type=Path, help='new session directory; MP4 and telemetry always saved')
     args = parser.parse_args()
     for key in ('scale', 'rotation_scale', 'max_linear_speed', 'max_angular_speed', 'max_joint_speed'):
@@ -86,7 +93,11 @@ def main():
             parser.error(f'{key} must be finite and positive')
     if not np.isfinite(args.seconds) or args.seconds < 0:
         parser.error('seconds must be finite and >=0')
-    config = Config(scale=args.scale, rotation_scale=args.rotation_scale,
+    try:
+        planes = PlanarBounds(*args.base_x_range, *args.base_y_range, args.base_z_max, args.plane_clearance)
+    except ValueError as exc:
+        parser.error(str(exc))
+    config = Config(planar_bounds=planes, scale=args.scale, rotation_scale=args.rotation_scale,
                     linear_speed=args.max_linear_speed, angular_speed=np.deg2rad(args.max_angular_speed),
                     joint_speed=np.deg2rad(args.max_joint_speed))
     model_path = MODEL if args.scene == 'single' else ROOT / 'scenes/dual_viperx_scene.xml'
@@ -122,7 +133,8 @@ def main():
         recording = Recording(directory, model, 30, dict(config=asdict(config), scene=args.scene,
                               upstream_commit=UPSTREAM_COMMIT, synthetic=args.demo,
                               ik_backend='mink', mink_version=version('mink'), qp_solver='daqp',
-                              started=datetime.now().astimezone().isoformat()))
+                              started=datetime.now().astimezone().isoformat()),
+                              planar_limits=[a.ik.planes for a in arms.values()] if args.show_plane_bounds else ())
         print(f'MP4: {directory.resolve() / "session.mp4"}', flush=True)
         print('Align: right controller -Z forward (blue +Z backward), release grips, press left X. Each grip moves its matching arm.', flush=True)
         phase = 'idle'
@@ -200,7 +212,13 @@ def main():
                     phase = 'idle'
                     if server:
                         server.haptic()
-            if 'home_reached' in events:
+            if 'home_blocked' in events:
+                for arm in arms.values():
+                    arm.homing = False
+                    arm.released = False
+                phase = 'idle'
+                recording.finish_episode(False)
+            elif 'home_reached' in events:
                 phase = 'ready'
             if not all(a.tracking for a in arms.values()) and phase == 'recording':
                 recording.finish_episode(False)
@@ -212,6 +230,8 @@ def main():
                     viewer.user_scn.ngeom = 0
                     for arm in arms.values():
                         draw_eef_frame(viewer.user_scn, data, arm.site)
+                        if args.show_plane_bounds:
+                            draw_planar_bounds(viewer.user_scn, arm.ik.planes)
                 viewer.sync()
             actual_p, actual_r = teleop.actual_pose()
             row = dict(host_ns=time.monotonic_ns(), elapsed_s=elapsed, label=label, phase=phase,
@@ -231,14 +251,14 @@ def main():
                         {'idle': 'Grip: move | A: home then record | Y: home', 'homing': 'Returning home | B: cancel',
                          'ready': 'A: start episode | grip: adjust', 'recording': 'A: save episode | B: discard'}[phase])
                 server.publish(dict(type='status', phase=phase, title=phase, scene=args.scene, arms=row['arms'], tracking=all(a.tracking for a in arms.values()),
-                                    deadman=any(a.engaged for a in arms.values()), clipped=any(a.clipped for a in arms.values()), gripper_closed=bool(right and right.trigger >= 0.5),
+                                    deadman=any(a.engaged for a in arms.values()), clipped=any(a.clipped or a.plane_limited for a in arms.values()), gripper_closed=bool(right and right.trigger >= 0.5),
                                     ik_ok=all(a.ik_ok for a in arms.values()), message=' | '.join(f'{side}: {a.message}' for side, a in arms.items()), hint=hint, record=True,
                                     task='ViperX simulation', episode=len(recording.episodes)+1, target_episodes='∞',
                                     saved=sum(e['saved'] for e in recording.episodes),
                                     elapsed_s=0 if recording.active is None else (recording.frames-recording.active)/30,
                                     robot_frame_q=base_q, gripper_frame_q=ee_q,
                                     left_gripper_frame_q=arms['left'].frames_in_vr()[1] if 'left' in arms else None))
-                if any(not a.ik_ok or a.clipped for a in arms.values()) and tick-last_haptic > 1:
+                if any(not a.ik_ok or a.clipped or a.plane_limited for a in arms.values()) and tick-last_haptic > 1:
                     server.haptic(intensity=0.2)
                     last_haptic = tick
             if elapsed-last_print >= 2:

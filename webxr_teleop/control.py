@@ -3,11 +3,12 @@
 World frame: +X right, +Y forward, +Z up. Position units are metres throughout.
 Uses SO(3) rotation filtering rather than independent Euler-angle filtering.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import mujoco
 import numpy as np
 from .mink_ik import MinkIK
+from .planar_limits import PlanarBounds
 from scipy.spatial.transform import Rotation
 
 JOINTS = ('waist', 'shoulder', 'elbow', 'forearm_roll', 'wrist_angle', 'wrist_rotate')
@@ -24,6 +25,7 @@ class Config:
     position_deadband: float = 0.002
     rotation_deadband: float = math.radians(1)
     max_jump: float = 0.12
+    planar_bounds: PlanarBounds = field(default_factory=PlanarBounds)
     joint_speed: float = math.radians(60)
     ik_damping: float = 0.02
     ik_posture_cost: float = 0.005
@@ -47,9 +49,11 @@ class Teleop:
         self.site = model.site(prefix + 'gripper').id
         self.scratch = mujoco.MjData(model)
         self.ik = MinkIK(model, data, self.joints, self.site, joint_speed=self.cfg.joint_speed,
-                         damping_cost=self.cfg.ik_damping, posture_cost=self.cfg.ik_posture_cost)
+                         damping_cost=self.cfg.ik_damping, posture_cost=self.cfg.ik_posture_cost,
+                         planar_bounds=self.cfg.planar_bounds)
         self.ik_position_error = self.ik_rotation_error = self.ik_joint_speed = 0.0
         self.ik_solved = True
+        self.plane_limited = False
         self.ik_reason = ''
         self.home = data.qpos[self.qids].copy()
         self.base_offset = data.xpos[model.body(prefix + 'base_link').id].copy()
@@ -80,6 +84,7 @@ class Teleop:
         self.target_p, self.target_r = self.actual_pose()
         self.ik_position_error = self.ik_rotation_error = self.ik_joint_speed = 0.0
         self.ik_solved = True
+        self.plane_limited = False
         self.ik_reason = ''
         self.last_hand = None
         self.last_stamp = None
@@ -117,6 +122,7 @@ class Teleop:
         result = self.ik.advance(self.data, p, r, dt)
         self.ik_solved = result.accepted
         self.ik_reason = result.reason
+        self.plane_limited = result.plane_limited
         self.ik_position_error, self.ik_rotation_error = result.position_error, result.rotation_error
         self.ik_joint_speed = result.joint_speed
         self.ik_ok = result.accepted and result.position_error <= 0.005 and result.rotation_error <= math.radians(5)
@@ -126,6 +132,7 @@ class Teleop:
 
     def step(self, left, right, now, dt, allow_alignment=True):
         self.events = []
+        self.plane_limited = False
         dt = float(np.clip(dt, 0, 0.05))
         left = left if left is not None and 0 <= now-left.received_t < self.cfg.timeout else None
         right = right if right is not None and 0 <= now-right.received_t < self.cfg.timeout else None
@@ -147,10 +154,20 @@ class Teleop:
             q = self.data.qpos[self.qids]
             speed = min(self.cfg.home_speed, self.cfg.joint_speed)
             q = q + np.clip(self.home - q, -speed*dt, speed*dt)
+            proposal = self.data.qpos.copy()
+            proposal[self.qids] = q
+            fraction = self.ik.planes.safe_fraction(self.data.qpos, proposal)
+            q = self.data.qpos[self.qids]+fraction*(q-self.data.qpos[self.qids])
             self.data.qpos[self.qids] = q
             self.data.ctrl[self.aids] = q
             mujoco.mj_forward(self.model, self.data)
             self.release()
+            if fraction < 1:
+                self.homing = False
+                self.plane_limited = True
+                self.events.append('home_blocked')
+                self.message = 'Homing blocked by a planar boundary; reposition with the controller.'
+                return
             if np.max(np.abs(q - self.home)) < 1e-5:
                 self.homing = False
                 self.events.append('home_reached')
@@ -164,12 +181,20 @@ class Teleop:
             return  # Gripper also holds on disconnect.
         lo, hi = self.model.actuator_ctrlrange[self.gripper]
         finger = hi - right.trigger * (hi-lo)
-        self.data.ctrl[self.gripper] = finger
-        self.data.qpos[self.fingers] = finger
+        proposal = self.data.qpos.copy()
+        proposal[self.fingers] = finger
+        finger_fraction = self.ik.planes.safe_fraction(self.data.qpos, proposal)
+        self.data.qpos[self.fingers] += finger_fraction*(finger-self.data.qpos[self.fingers])
+        self.data.ctrl[self.gripper] = self.data.qpos[self.fingers[0]]
+        self.plane_limited |= finger_fraction < 1
+        mujoco.mj_forward(self.model, self.data)
         if not right.squeeze:
             self.release()
             self.released = True
             self.ik_ok = True
+            self.plane_limited = finger_fraction < 1
+            if self.plane_limited:
+                self.message = 'Gripper stopped at a planar boundary.'
             return
         if not self.calibrated or not self.released:
             self.release()
@@ -217,9 +242,11 @@ class Teleop:
         p = self.target_p + dp
         r = Rotation.from_rotvec(rv).as_matrix() @ self.target_r
         accepted = self.solve(p, r, dt)
+        self.plane_limited |= finger_fraction < 1
         if accepted:
             self.target_p, self.target_r = p, r
-            self.message = ('Tracking limited near a singularity, joint limit, or unreachable pose.' if not self.ik_ok else
+            self.message = ('Planar boundary reached.' if self.plane_limited else
+                            'Tracking limited near a singularity, joint limit, or unreachable pose.' if not self.ik_ok else
                             'Workspace limit reached.' if self.clipped else f'Following {self.side} controller.')
         else:
             self.message = 'IK solve failed; holding joint command.'

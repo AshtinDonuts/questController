@@ -6,6 +6,7 @@ import mink
 import mujoco
 import numpy as np
 from scipy.spatial.transform import Rotation
+from .planar_limits import PlanarLimit
 
 
 @dataclass
@@ -15,11 +16,12 @@ class IKResult:
     rotation_error: float
     joint_speed: float = 0.0
     reason: str = ''
+    plane_limited: bool = False
 
 
 class MinkIK:
     def __init__(self, model, data, joint_ids, site, *, joint_speed=math.radians(60),
-                 damping_cost=0.02, posture_cost=0.005):
+                 damping_cost=0.02, posture_cost=0.005, planar_bounds=None):
         if not np.isfinite(joint_speed) or joint_speed <= 0:
             raise ValueError('joint_speed must be finite and positive')
         if not all(np.isfinite(x) and x >= 0 for x in (damping_cost, posture_cost)):
@@ -46,7 +48,11 @@ class MinkIK:
         names = {model.joint(j).name for j in joint_ids}
         velocity_limits = {model.joint(j).name: joint_speed if model.joint(j).name in names else 0.
                            for j in range(model.njnt)}
-        self.limits = [self.configuration_limit, mink.VelocityLimit(model, velocity_limits)]
+        prefix = model.site(site).name.split('/')[0]
+        self.planes = PlanarLimit(model, data, prefix+'/base_link', planar_bounds)
+        if np.min(self.planes.distances(data)) < -1e-8:
+            raise ValueError('Initial arm configuration violates the configured planar bounds')
+        self.limits = [self.configuration_limit, mink.VelocityLimit(model, velocity_limits), self.planes]
 
     def set_reference(self, qpos):
         """A small posture preference towards the pose at clutch engagement."""
@@ -56,6 +62,8 @@ class MinkIK:
         if not np.isfinite(dt) or dt <= 0 or not np.all(np.isfinite(p)) or not np.all(np.isfinite(r)):
             return IKResult(False, 0., 0., reason='Invalid target or timestep')
         dt = min(dt, 0.05)
+        if np.min(self.planes.distances(data)) < -1e-8:
+            return IKResult(False, 0., 0., reason='Arm is outside planar bounds', plane_limited=True)
         self.configuration.update(data.qpos)
         self.frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(r), p))
         try:
@@ -73,9 +81,12 @@ class MinkIK:
         if (np.any(candidate < self.configuration_limit.lower[self.qids] - 1e-7)
                 or np.any(candidate > self.configuration_limit.upper[self.qids] + 1e-7)):
             return IKResult(False, 0., 0., reason='IK joint limit violation')
-        data.qpos[self.qids] = candidate
+        fraction = self.planes.safe_fraction(data.qpos, self.configuration.q)
+        data.qpos[self.qids] += fraction*(candidate-data.qpos[self.qids])
+        speed *= fraction
         mujoco.mj_forward(self.model, data)
         actual_p = data.site_xpos[self.site]
         actual_r = data.site_xmat[self.site].reshape(3, 3)
         return IKResult(True, float(np.linalg.norm(p-actual_p)),
-                        float(np.linalg.norm(Rotation.from_matrix(r@actual_r.T).as_rotvec())), speed)
+                        float(np.linalg.norm(Rotation.from_matrix(r@actual_r.T).as_rotvec())), speed,
+                        plane_limited=bool(fraction < 1 or np.min(self.planes.distances(data)) < .001))

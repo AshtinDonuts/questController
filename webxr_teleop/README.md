@@ -66,7 +66,7 @@ Every run saves a timestamped folder under `teleop_sessions/`, printed at startu
 
 ```bash
 conda run -n quest_ros --no-capture-output python -m webxr_teleop.run --headless --demo
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 conda run -n quest_ros python -m pytest tests/test_webxr_teleop.py tests/test_webxr_dual.py tests/test_mink_ik.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 conda run -n quest_ros python -m pytest tests/test_webxr_teleop.py tests/test_webxr_dual.py tests/test_mink_ik.py tests/test_planar_limits.py -q
 node tests/test_webxr_client.cjs
 ```
 
@@ -105,7 +105,7 @@ the shared episode and cancels homing. Losing either hand discards an active epi
 Right-stick click shows both EEF orientations. MP4 contains both arms and their EEF axes;
 telemetry has `arms.left` and `arms.right`, while the legacy top-level pose fields remain right-arm data.
 The arms are 64 cm apart, with each workspace translated to its own base.
-The kinematic IK does not enforce inter-arm collision avoidance.
+The kinematic IK enforces base-fixed planar boundaries and the table plane; it does not enforce inter-arm collision avoidance.
 
 Render the independent right-only, left-only, and simultaneous-motion check:
 ```bash
@@ -132,8 +132,7 @@ when some EEF tracking error remains. This avoids the old all-or-nothing pose so
 position error <=5 mm and orientation error <=5 degrees. The UI reports tracking
 limited while a valid step has larger error. Numerical failure holds the current
 arm command. Release, tracking timeout and recenter still stop motion and require
-regripping as before. This is kinematic control; collision avoidance and joint
-acceleration/jerk constraints are not enabled.
+regripping as before. This is kinematic control; only the planar collision constraints described below are enabled. Object, self-collision, arm-to-arm avoidance and joint acceleration/jerk constraints are not enabled.
 
 Each telemetry arm now includes measured position/orientation error, maximum
 commanded joint speed, and solve status/reason. Manifests record the Mink version
@@ -158,3 +157,55 @@ the live IK implementation.
 References: [Mink tasks](https://kevinzakka.github.io/mink/api/tasks.html),
 [limits](https://kevinzakka.github.io/mink/api/limits.html), and
 [ALOHA example](https://github.com/kevinzakka/mink/blob/main/examples/arm_aloha.py).
+
+## Planar collision boundaries
+
+Each arm has a fixed permitted region in its **robot base frame**, not its EEF
+frame. In these scenes base +X points forward, +Y left and +Z up (world +X is right,
++Y forward). Bounds remain fixed as joints and wrists rotate. Defaults in metres:
+
+| Boundary | Default |
+| --- | --- |
+| Base X (back / forward) | −0.40 to +0.70 |
+| Base Y (right / left) | −0.50 to +0.50 |
+| Base Z ceiling | +0.75 |
+| Bottom | Infinite plane through the tabletop's actual top surface |
+| Clearance | 0.005 from every plane |
+
+The table top is read from the scene's named table box/plane. No interaction objects
+are included. Each moving robot collision geom is conservatively enclosed by its
+compiled local bounding box. All corners must stay inside all half-spaces, so this
+protects links, wrists, fingers and the wrist camera as well as the gripper. The
+fixed mounting base is exempt. Bounding boxes can stop motion earlier than an exact
+mesh collision test would.
+
+Mink receives linearized plane inequalities; a post-solve FK check backtracks the
+step when needed. Intermediate configurations are sampled at most 0.25 degrees
+or 0.25 mm apart. This is a kinematic, sampled guard, not a guarantee of continuous
+collision avoidance on hardware. Homing and trigger-driven finger motion also pass
+through the guard. If a straight joint-space home path is blocked, homing stops;
+it does not plan a detour. Bounds that exclude the starting arm pose fail at startup.
+
+The regions intentionally overlap in dual mode. There is **no arm-to-arm or
+self-collision avoidance**. Arms may contact each other while satisfying every plane.
+The existing EEF target clamp remains a separate teleoperation workspace setting.
+
+Launch with visible bounds, or customize the default planes:
+
+```bash
+conda run -n quest_ros --no-capture-output python -m webxr_teleop.run --scene dual --show-plane-bounds
+conda run -n quest_ros --no-capture-output python -m webxr_teleop.run --scene dual \
+  --base-x-range -0.4 0.7 --base-y-range -0.5 0.5 --base-z-max 0.75 --plane-clearance 0.005
+```
+
+Telemetry includes `plane_limited` and minimum `plane_clearance_m` (remaining distance
+after the margin). Manifests save the configured bounds. The optional wireframes are
+shown in both the viewer and MP4.
+
+For a direct-IK demonstration with targets below the table and beyond narrower side
+planes (±0.18 m for visibility), followed by retreat into the allowed region:
+
+```bash
+MUJOCO_GL=egl conda run -n quest_ros --no-capture-output python -m webxr_teleop.demo_planes \
+  --output teleop_sessions/plane_demo
+```

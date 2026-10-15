@@ -3,14 +3,15 @@ import json
 from pathlib import Path
 import subprocess
 import mujoco
-from .frames import draw_eef_frame
+from .frames import draw_eef_frame, draw_planar_bounds
 
 
 class Recording:
-    def __init__(self, directory, model, fps, metadata):
+    def __init__(self, directory, model, fps, metadata, planar_limits=()):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
         self.metadata = metadata
+        self.planar_limits = planar_limits
         self.fps = fps
         self.frames = 0
         self.episodes = []
@@ -48,6 +49,8 @@ class Recording:
         self.renderer.update_scene(data, camera='teleoperator_pov')
         for site in self.sites:
             draw_eef_frame(self.renderer.scene, data, site)
+        for planes in self.planar_limits:
+            draw_planar_bounds(self.renderer.scene, planes)
         self.encoder.stdin.write(self.renderer.render().tobytes())
         self.stream.write(json.dumps(dict(frame=self.frames, **row), allow_nan=False) + '\n')
         self.stream.flush()

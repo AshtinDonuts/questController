@@ -59,7 +59,12 @@ def replay(rows, scene='dual', single_side='right', config=None):
             accepted = arm.solve(p, r, dt)
             # Grippers are independent of IK, and follow the source recording.
             offset = 0 if source_side == 'right' else 8
-            data.qpos[arm.fingers] = original['qpos'][offset+6:offset+8]
+            proposal = data.qpos.copy()
+            proposal[arm.fingers] = original['qpos'][offset+6:offset+8]
+            fraction = arm.ik.planes.safe_fraction(data.qpos, proposal)
+            data.qpos[arm.fingers] += fraction*(proposal[arm.fingers]-data.qpos[arm.fingers])
+            arm.plane_limited |= fraction < 1
+            mujoco.mj_forward(model, data)
             data.ctrl[arm.gripper] = data.qpos[arm.fingers[0]]
             arm.target_p, arm.target_r = p, r
             measured_speed = float(np.max(np.abs(data.qpos[arm.qids]-old_q))/dt)
