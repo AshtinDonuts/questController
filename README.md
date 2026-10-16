@@ -1,5 +1,9 @@
 # Updated Quest browser teleoperation
 
+## Planned real-robot architecture
+
+The [Quest → ALOHA / dual ViperX control pipeline](docs/quest_aloha_control_pipeline.svg) is the project reference for the planned real-robot architecture (15 October 2026). It covers exclusive teleoperation/homing control, independent motor workers, hardware feedback, stop handling, and latched powered hold. Implementation and hardware validation are pending; the diagram describes planned behavior.
+
 The updated single-arm setup uses StairVLA's WebXR browser interface, one-button axis alignment, filtered relative motion, IK reachability checks, headset feedback, and automatic MP4 recording. Start here: [WebXR setup and controls](webxr_teleop/README.md).
 
 ```bash

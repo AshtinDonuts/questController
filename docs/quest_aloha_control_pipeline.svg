@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1540" viewBox="0 0 1800 1540" role="img" aria-labelledby="title desc">
+<title id="title">Quest 3 to dual ViperX real robot control pipeline</title>
+<desc id="desc">Planned architecture showing exclusive teleoperation or homing control, independent motor workers, hardware feedback, and latched powered hold without torque disable.</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#36536d"/></marker><marker id="red" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#bd3b43"/></marker></defs>
+<rect width="1800" height="1540" fill="#f5f8fc"/>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#193047}.heading{font-size:23px;font-weight:700}.body{font-size:19px}.label{font-size:17px;fill:#52677c}.edge{fill:none;stroke:#36536d;stroke-width:2.6;marker-end:url(#arrow)}.stop{fill:none;stroke:#bd3b43;stroke-width:3;marker-end:url(#red)}.feedback{fill:none;stroke:#36536d;stroke-width:2.4;stroke-dasharray:8 6;marker-end:url(#arrow)}</style>
+<text x="65" y="57" font-size="34" font-weight="700">Quest 3 → ALOHA / dual ViperX</text>
+<text x="65" y="91" font-size="20" fill="#52677c">Planned real-robot architecture • 15 October 2026 • implementation and hardware validation pending</text>
+
+<rect x="85" y="135" width="970" height="105" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="107" y="168" class="heading">Quest 3 · left and right controllers</text>
+<text x="107" y="201" class="body">Pose + grip + trigger + buttons; left hand → left arm, right hand → right arm</text>
+<rect x="85" y="285" width="970" height="132" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="107" y="318" class="heading">HTTPS / WSS receiver</text>
+<text x="107" y="351" class="body">Validate pose, session generation, sequence and freshness token</text>
+<text x="107" y="378" class="body">Forward fresh input + tracking health; route B stop independently of IK</text>
+<path d="M570 240 V285" class="edge"/>
+<text x="590" y="268" class="label">wireless pose stream</text>
+<rect x="85" y="465" width="970" height="132" rx="15" fill="#e9f2ff" stroke="#80a8db" stroke-width="2"/>
+<text x="107" y="498" class="heading">Supervisor · exclusive motion owner</text>
+<text x="107" y="531" class="body">DISARMED → ARMED → TELEOP or HOMING; HOLD / FAULT overrides motion</text>
+<text x="107" y="558" class="body">Arm only after verified hardware profile, healthy feedback and operator reset</text>
+<path d="M570 417 V465" class="edge"/>
+<rect x="85" y="650" width="465" height="160" rx="15" fill="#edf6ff" stroke="#80a8db" stroke-width="2"/>
+<text x="107" y="683" class="heading">TELEOP · Mink IK</text>
+<text x="107" y="716" class="body">Clutched relative controller motion</text>
+<text x="107" y="743" class="body">Grip enables matching arm + gripper</text>
+<text x="107" y="770" class="body">Solve from measured robot joints</text>
+<rect x="590" y="650" width="465" height="160" rx="15" fill="#eaf7f3" stroke="#7db8a7" stroke-width="2"/>
+<text x="612" y="683" class="heading">HOMING · joint trajectory</text>
+<text x="612" y="716" class="body">Left Y held 1 s; both grips released</text>
+<text x="612" y="743" class="body">Both arms move; Quest motion ignored</text>
+<text x="612" y="770" class="body">Smooth start/finish; grippers hold</text>
+<path d="M325 597 V650" class="edge"/>
+<path d="M825 597 V650" class="edge"/>
+<text x="560" y="734" text-anchor="middle" class="label">OR</text>
+<rect x="85" y="865" width="970" height="132" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="107" y="898" class="heading">Final command checks · applied to both motion modes</text>
+<text x="107" y="931" class="body">Joint / speed / acceleration limits + base-frame planes + table clearance</text>
+<text x="107" y="958" class="body">Validate homing path before start; reject invalid targets; no queued catch-up</text>
+<path d="M325 810 V838 H460 V865" class="edge"/>
+<path d="M825 810 V838 H680 V865" class="edge"/>
+<rect x="85" y="1055" width="465" height="154" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="107" y="1088" class="heading">Left motor worker · 50 Hz</text>
+<text x="107" y="1121" class="body">Exclusive left serial-port ownership</text>
+<text x="107" y="1148" class="body">Named joint + gripper conversion</text>
+<text x="107" y="1175" class="body">Bounded I/O; local command watchdog</text>
+<rect x="590" y="1055" width="465" height="154" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="612" y="1088" class="heading">Right motor worker · 50 Hz</text>
+<text x="612" y="1121" class="body">Exclusive right serial-port ownership</text>
+<text x="612" y="1148" class="body">Named joint + gripper conversion</text>
+<text x="612" y="1175" class="body">Bounded I/O; local command watchdog</text>
+<path d="M325 997 V1055" class="edge"/>
+<path d="M825 997 V1055" class="edge"/>
+<rect x="85" y="1255" width="465" height="106" rx="15" fill="#eaf7f3" stroke="#7db8a7" stroke-width="2"/>
+<text x="107" y="1288" class="heading">Left ViperX + gripper</text>
+<text x="107" y="1321" class="body">LeRobot low-level Dynamixel interface</text>
+<rect x="590" y="1255" width="465" height="106" rx="15" fill="#eaf7f3" stroke="#7db8a7" stroke-width="2"/>
+<text x="612" y="1288" class="heading">Right ViperX + gripper</text>
+<text x="612" y="1321" class="body">LeRobot low-level Dynamixel interface</text>
+<path d="M325 1209 V1255" class="edge"/>
+<path d="M825 1209 V1255" class="edge"/>
+<path d="M85 1308 H40 V528 H85" class="feedback"/>
+<text transform="translate(28 1015) rotate(-90)" class="label">Measured joint / gripper positions + motor health → supervisor and IK</text>
+<rect x="1170" y="135" width="555" height="186" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="1192" y="168" class="heading">Attach safely · preflight</text>
+<text x="1192" y="201" class="body">Require configured, torque-enabled arms</text>
+<text x="1192" y="228" class="body">Check identities, modes and shadow motors</text>
+<text x="1192" y="255" class="body">Verify joint mapping, base spacing and table</text>
+<text x="1192" y="282" class="body">Start from measured pose; no startup jump</text>
+<rect x="1170" y="365" width="555" height="230" rx="15" fill="#fff0f1" stroke="#d99298" stroke-width="2"/>
+<text x="1192" y="398" class="heading">Independent stop / health path</text>
+<text x="1192" y="431" class="body">Quest B or PC Space / local stop command</text>
+<text x="1192" y="458" class="body">Either controller lost or pose age &gt;150 ms</text>
+<text x="1192" y="485" class="body">IK command age &gt;150 ms</text>
+<text x="1192" y="512" class="body">Feedback age &gt;100 ms or motor / I/O fault</text>
+<text x="1192" y="539" class="body">Any stop cancels TELEOP and HOMING</text>
+<path d="M1055 350 H1130 V410 H1170" class="stop"/>
+<rect x="1170" y="650" width="555" height="230" rx="15" fill="#fff0f1" stroke="#d99298" stroke-width="2"/>
+<text x="1192" y="683" class="heading">LATCHED HOLD · both arms + grippers</text>
+<text x="1192" y="716" class="body">Capture fresh measured joint positions once</text>
+<text x="1192" y="743" class="body">Keep fixed hold targets; keep torque enabled</text>
+<text x="1192" y="770" class="body">No automatic resume after reconnection</text>
+<text x="1192" y="797" class="body">Unavailable feedback → hold UNCONFIRMED</text>
+<text x="1192" y="824" class="body">Reset → release grips → align X → re-grip</text>
+<path d="M1447 595 V650" class="stop"/>
+<path d="M1170 785 H1125 V1020 H825 V1055" class="stop"/>
+<path d="M1125 1020 H325 V1055" class="stop"/>
+<rect x="1170" y="930" width="555" height="170" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="1192" y="963" class="heading">Motor-bus watchdog · 300 ms</text>
+<text x="1192" y="996" class="body">Independent fallback if bus traffic stops</text>
+<text x="1192" y="1023" class="body">Require supported firmware + bench test</text>
+<text x="1192" y="1050" class="body">Do not automatically clear watchdog faults</text>
+<text x="1192" y="1077" class="body">Does not detect stale IK while polling runs</text>
+<rect x="1170" y="1150" width="555" height="170" rx="15" fill="#ffffff" stroke="#b5c6d7" stroke-width="2"/>
+<text x="1192" y="1183" class="heading">Asynchronous logs + MuJoCo MP4</text>
+<text x="1192" y="1216" class="body">Measured and commanded joint trajectories</text>
+<text x="1192" y="1243" class="body">Freshness, motor health, stop reasons</text>
+<text x="1192" y="1270" class="body">Video reflects measured hardware poses</text>
+<text x="1192" y="1297" class="body">Rendering / encoding cannot block control</text>
+<path d="M1055 1125 H1100 V1235 H1170" class="feedback"/>
+<rect x="85" y="1410" width="1640" height="90" rx="12" fill="#e6edf5"/>
+<text x="108" y="1442" class="body">Initial limits: teleop 10°/s joints · homing 5°/s, 10°/s² · synchronized trajectory to a verified home pose.</text>
+<text x="108" y="1473" class="body">Powered hold requires working motor power and communication. V1 has no inter-arm or object collision avoidance.</text>
+</svg>

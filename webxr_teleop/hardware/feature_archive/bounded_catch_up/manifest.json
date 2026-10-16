@@ -1,0 +1,8 @@
+{
+  "feature": "bounded catch-up with filtered Cartesian targets",
+  "restore_option": "Set top-level teleop_catch_up to true in the profile. Snapshots preserve pre-change source and configuration.",
+  "snapshot_files": [
+    "planner.py.snapshot",
+    "rig.json.snapshot"
+  ]
+}

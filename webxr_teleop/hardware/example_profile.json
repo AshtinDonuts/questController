@@ -1,0 +1,189 @@
+{
+  "version": 1,
+  "watchdog_verified": false,
+  "table_top_z": 0.0,
+  "planes": {
+    "x_min": -0.4,
+    "x_max": 0.7,
+    "y_min": -0.5,
+    "y_max": 0.5,
+    "z_max": 0.75,
+    "clearance": 0.02
+  },
+  "arms": {
+    "left": {
+      "port": "/dev/ttyDXL_follower_left",
+      "calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/left_follower.json",
+      "verified": false,
+      "verification_note": "",
+      "sign": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "offset_deg": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "home_rad": [
+        0,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "initial_rad": [
+        0,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "initial_gripper": 0.8,
+      "lower_rad": [
+        -3.12,
+        -1.83,
+        -1.74,
+        -3.12,
+        -1.84,
+        -3.12
+      ],
+      "upper_rad": [
+        3.12,
+        1.23,
+        1.58,
+        3.12,
+        2.21,
+        3.12
+      ],
+      "base_position": [
+        -0.32,
+        0,
+        0.02
+      ],
+      "base_quaternion_wxyz": [
+        0.7071067811865476,
+        0,
+        0,
+        0.7071067811865476
+      ],
+      "finger_closed_m": 0.002,
+      "finger_open_m": 0.037,
+      "calibration_sha256": "",
+      "opening_rad": [
+        0,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "sleep_rad": [
+        0.12,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "sequence_verified": false,
+      "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose."
+    },
+    "right": {
+      "port": "/dev/ttyDXL_follower_right",
+      "calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/right_follower.json",
+      "verified": false,
+      "verification_note": "",
+      "sign": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "offset_deg": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "home_rad": [
+        0,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "initial_rad": [
+        0,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "initial_gripper": 0.8,
+      "lower_rad": [
+        -3.12,
+        -1.83,
+        -1.74,
+        -3.12,
+        -1.84,
+        -3.12
+      ],
+      "upper_rad": [
+        3.12,
+        1.23,
+        1.58,
+        3.12,
+        2.21,
+        3.12
+      ],
+      "base_position": [
+        0.32,
+        0,
+        0.02
+      ],
+      "base_quaternion_wxyz": [
+        0.7071067811865476,
+        0,
+        0,
+        0.7071067811865476
+      ],
+      "finger_closed_m": 0.002,
+      "finger_open_m": 0.037,
+      "calibration_sha256": "",
+      "opening_rad": [
+        0,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "sleep_rad": [
+        0.12,
+        -0.3,
+        0.6,
+        0,
+        -0.3,
+        0
+      ],
+      "sequence_verified": false,
+      "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose."
+    }
+  }
+}

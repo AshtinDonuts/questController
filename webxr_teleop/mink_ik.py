@@ -68,7 +68,7 @@ class MinkIK:
         self.frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(r), p))
         try:
             velocity = mink.solve_ik(self.configuration, self.tasks, dt, solver='daqp',
-                                     damping=1e-8, limits=self.limits, safety_break=True)
+                                     damping=1e-8, limits=self.limits, safety_break=True, primal_tol=1e-10)
         except (mink.NoSolutionFound, mink.NotWithinConfigurationLimits) as exc:
             return IKResult(False, 0., 0., reason=str(exc))
         if not np.all(np.isfinite(velocity)):

@@ -11,6 +11,8 @@ let status = {};
 let aidsVisible = false; // gripper ghost + robot base axes (right stick click)
 let lastRightStick = false;
 let referenceEpoch = 0;
+let freshnessToken = null;
+let packetSequence = 0;
 
 function resetReference() {
   referenceEpoch += 1;
@@ -26,6 +28,7 @@ function connect() {
   };
   ws.onclose = () => {
     ws = null;
+    freshnessToken = null;
     setConnection(false);
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 1.5, 4000);
@@ -34,6 +37,7 @@ function connect() {
   ws.onmessage = (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch (e) { return; }
+    if (msg.type === 'freshness') freshnessToken = msg.token;
     if (msg.type === 'status') { status = msg; renderStatus(); }
     if (msg.type === 'haptic') pulse(msg.hand, msg.intensity, msg.duration_ms);
   };
@@ -207,7 +211,7 @@ AFRAME.registerComponent('teleop-stream', {
       if (right.buttons.thumbstick && !lastRightStick) aidsVisible = !aidsVisible;
       lastRightStick = right.buttons.thumbstick;
     }
-    send({ type: 'controllers', reference_epoch: referenceEpoch, t: Date.now(), left, right });
+    send({ type: 'controllers', freshness: freshnessToken, sequence: ++packetSequence, reference_epoch: referenceEpoch, t: Date.now(), left, right });
 
     $('leftHandInfo').setAttribute('value', poseText(this.left.object3D));
     $('rightHandInfo').setAttribute('value', poseText(this.right.object3D));
@@ -251,26 +255,36 @@ async function setupEnterButton() {
     note.textContent = 'WebXR is not available in this browser. Open this page in the Meta Quest browser.';
     return;
   }
-  const ar = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-  const vr = ar ? false : await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
-  if (!ar && !vr) {
-    note.textContent = 'No immersive WebXR session available here. This page is still useful as a status monitor.';
+  const vr = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+  if (!vr) {
+    note.textContent = 'Immersive VR is unavailable. Open this HTTPS page in Meta Quest Browser.';
     return;
   }
   button.disabled = false;
-  button.textContent = ar ? 'Start Controller Tracking' : 'Enter VR';
-  note.textContent = 'Passthrough stays on. Watch the simulated arm on the computer screen.';
-  button.onclick = () => {
-    const start = ar && scene.enterAR ? scene.enterAR() : scene.enterVR();
-    Promise.resolve(start).catch((err) => { note.textContent = `Could not start the XR session: ${err.message}`; });
+  button.textContent = 'Enter VR';
+  note.textContent = 'Enter VR to stream both controllers. This session does not request AR passthrough.';
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      // Call directly from the click gesture; don't select AR merely because
+      // the browser advertises it. AR startup can fail independently of VR.
+      await scene.enterVR();
+      note.textContent = 'VR active. Release both grips; press left X when the robot is READY.';
+    } catch (err) {
+      note.textContent = `Could not enter VR: ${err.message || err}. Close other immersive sessions, then tap Enter VR to retry.`;
+    } finally {
+      button.disabled = false;
+    }
   };
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   const scene = $('scene');
-  const attach = () => scene.setAttribute('teleop-stream', '');
+  const attach = () => {
+    scene.setAttribute('teleop-stream', '');
+    setupEnterButton();
+  };
   if (scene.hasLoaded) attach(); else scene.addEventListener('loaded', attach);
-  setupEnterButton();
   scene.addEventListener('enter-vr', () => {
     resetReference();
     const ref = scene.renderer.xr.getReferenceSpace();

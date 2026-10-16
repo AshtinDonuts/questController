@@ -15,6 +15,7 @@ import asyncio
 import json
 import mimetypes
 import socket
+import secrets
 import ssl
 import subprocess
 import threading
@@ -100,7 +101,8 @@ def ensure_tls_certificate(cert: Path | None, key: Path | None) -> tuple[Path, P
 class VRServer:
     """Runs in a background thread; the robot loop reads :meth:`latest` and pushes :meth:`publish`."""
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8443, cert: Path | None = None, key: Path | None = None):
+    def __init__(self, host: str = "0.0.0.0", port: int = 8443, cert: Path | None = None, key: Path | None = None, hardware_freshness: bool = False):
+        self.hardware_freshness = hardware_freshness
         self.host = host
         self.port = port
         self.cert, self.key = ensure_tls_certificate(cert, key)
@@ -195,6 +197,19 @@ class VRServer:
             self.generation += 1
         print(f"[VR] Headset connected from {websocket.remote_address[0]}.")
         reference_epoch = None
+        tokens = {}
+        last_sequence = -1
+        async def challenge():
+            while True:
+                now = time.perf_counter()
+                token = secrets.token_hex(16)
+                tokens[token] = now
+                for old in list(tokens):
+                    if now-tokens[old] > .150:
+                        del tokens[old]
+                await websocket.send(json.dumps(dict(type='freshness', token=token)))
+                await asyncio.sleep(.05)
+        challenge_task = asyncio.create_task(challenge()) if self.hardware_freshness else None
         try:
             if self._status:
                 await websocket.send(json.dumps({"type": "status", **self._status}))
@@ -222,8 +237,18 @@ class VRServer:
                     continue
                 if data.get("type") == "controllers":
                     now = time.perf_counter()
-                    left = _parse_controller(data.get("left"), now)
-                    right = _parse_controller(data.get("right"), now)
+                    if self.hardware_freshness:
+                        seq = data.get('sequence')
+                        issued = tokens.get(data.get('freshness'), -float('inf'))
+                        if (not isinstance(seq, int) or isinstance(seq, bool) or seq <= last_sequence
+                                or not 0 <= now-issued <= .150):
+                            with self._lock:
+                                self._controllers = {'left': None, 'right': None}
+                            continue
+                        last_sequence = seq
+                    sample_t = issued if self.hardware_freshness else now
+                    left = _parse_controller(data.get("left"), sample_t)
+                    right = _parse_controller(data.get("right"), sample_t)
                     with self._lock:
                         self._controllers = {"left": left, "right": right}
                         self._last_packet_t = now
@@ -231,6 +256,9 @@ class VRServer:
         except Exception as exc:  # noqa: BLE001 - a dropped headset must not kill the server
             print(f"[VR] Headset connection closed: {exc}")
         finally:
+            if challenge_task:
+                challenge_task.cancel()
+                await asyncio.gather(challenge_task, return_exceptions=True)
             self._clients.discard(websocket)
             with self._lock:
                 self._controllers = {"left": None, "right": None}

@@ -7,10 +7,11 @@ from .frames import draw_eef_frame, draw_planar_bounds
 
 
 class Recording:
-    def __init__(self, directory, model, fps, metadata, planar_limits=()):
+    def __init__(self, directory, model, fps, metadata, planar_limits=(), video_filter=None, camera='teleoperator_pov'):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
         self.metadata = metadata
+        self.camera = camera
         self.planar_limits = planar_limits
         self.fps = fps
         self.frames = 0
@@ -21,7 +22,8 @@ class Recording:
         self.renderer = mujoco.Renderer(model, height=480, width=640)
         self.encoder = subprocess.Popen(
             ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
-             '-s', '640x480', '-r', str(fps), '-i', '-', '-an', '-c:v', 'libx264',
+             '-s', '640x480', '-r', str(fps), '-i', '-', '-an',
+             *(['-vf', video_filter] if video_filter else []), '-c:v', 'libx264',
              '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
              str(self.directory / 'session.mp4')], stdin=subprocess.PIPE)
         self._manifest('recording')
@@ -46,7 +48,7 @@ class Recording:
             self._manifest('recording')
 
     def write(self, data, row):
-        self.renderer.update_scene(data, camera='teleoperator_pov')
+        self.renderer.update_scene(data, camera=self.camera)
         for site in self.sites:
             draw_eef_frame(self.renderer.scene, data, site)
         for planes in self.planar_limits:

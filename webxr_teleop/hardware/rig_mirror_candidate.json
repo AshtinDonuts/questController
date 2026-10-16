@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "watchdog_verified": false,
+  "table_top_z": 0.0,
+  "planes": {
+    "x_min": -0.4,
+    "x_max": 0.7,
+    "y_min": -0.5,
+    "y_max": 0.5,
+    "z_max": 0.75,
+    "clearance": 0.005
+  },
+  "arms": {
+    "left": {
+      "port": "/dev/ttyDXL_follower_left",
+      "calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/left_follower.json",
+      "verified": false,
+      "verification_note": "Visual hypothesis from supplied sleep photograph and torque-off encoder readings, 2026-10-16. Shoulder about 2.8 degrees outside model limit. Sign/direction and other poses unverified; read-only mirror only. Diagnostic elbow trial: +10 degrees from original 270-degree offset; visualization only, may exceed model joint limits.",
+      "sign": [
+        1,
+        -1,
+        -1,
+        1,
+        1,
+        1
+      ],
+      "offset_deg": [
+        0,
+        90,
+        280,
+        0,
+        0,
+        0
+      ],
+      "home_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_gripper": 0.18285714285714286,
+      "lower_rad": [
+        -3.14158,
+        -1.85005,
+        -1.76278,
+        -3.14158,
+        -1.8675,
+        -3.14158
+      ],
+      "upper_rad": [
+        3.14158,
+        1.25664,
+        1.6057,
+        3.14158,
+        2.23402,
+        3.14158
+      ],
+      "base_position": [
+        0.0,
+        0.0,
+        0.02
+      ],
+      "base_quaternion_wxyz": [
+        0.7071067811865477,
+        0.0,
+        0.0,
+        0.7071067811865477
+      ],
+      "finger_closed_m": 0.002,
+      "finger_open_m": 0.037,
+      "calibration_sha256": "b325481613ae0ff601faa3a7ef0ee2415b029742ceed1a5cdadf15fec9726d31"
+    },
+    "right": {
+      "port": "/dev/ttyDXL_follower_right",
+      "calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/right_follower.json",
+      "verified": false,
+      "verification_note": "Imported ports/calibration and simulation geometry; physical joint mapping, home and watchdog behavior not verified.",
+      "sign": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "offset_deg": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "home_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_gripper": 0.18285714285714286,
+      "lower_rad": [
+        -3.14158,
+        -1.85005,
+        -1.76278,
+        -3.14158,
+        -1.8675,
+        -3.14158
+      ],
+      "upper_rad": [
+        3.14158,
+        1.25664,
+        1.6057,
+        3.14158,
+        2.23402,
+        3.14158
+      ],
+      "base_position": [
+        0.0,
+        0.0,
+        0.02
+      ],
+      "base_quaternion_wxyz": [
+        0.7071067811865477,
+        0.0,
+        0.0,
+        0.7071067811865477
+      ],
+      "finger_closed_m": 0.002,
+      "finger_open_m": 0.037,
+      "calibration_sha256": "b325481613ae0ff601faa3a7ef0ee2415b029742ceed1a5cdadf15fec9726d31"
+    }
+  },
+  "provenance": {
+    "lerobot_config": "/home/King/alohaX_lerobot_fork/lerobot/configs/robot/aloha.yaml",
+    "simulation_scene": "/home/King/Desktop/QuestController/scenes/single_viperx_scene.xml",
+    "simulation_robot": "/home/King/Desktop/QuestController/scenes/single_viperx.xml",
+    "usage": "Use --side left or --side right. Both entries share the single-arm display placement; it is not measured dual-arm mounting geometry.",
+    "mapping": "LEFT diagnostic candidate only: q_shoulder=90-L_shoulder; q_elbow=280-L_elbow (degrees). Other joints unchanged. Not a validated hardware calibration. Right mapping remains unchanged.",
+    "planes": "Simulation CLI defaults, relative to each base; table is 0.02 m below base origin.",
+    "verification": "Calibration hashes identify imported files only, not physical verification."
+  }
+}

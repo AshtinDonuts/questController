@@ -209,3 +209,12 @@ planes (±0.18 m for visibility), followed by retreat into the allowed region:
 MUJOCO_GL=egl conda run -n quest_ros --no-capture-output python -m webxr_teleop.demo_planes \
   --output teleop_sessions/plane_demo
 ```
+
+## Physical dual-arm control
+
+The separate [hardware interface and commissioning guide](hardware/README.md) provides
+mock, read-only observe, and explicitly enabled live modes using the local LeRobot
+Dynamixel interface. It adds independent motor watchdogs, latched powered hold,
+and exclusive slow Quest-Y homing. The example hardware profile is deliberately
+unverified; physical commissioning is required before live motion. The simulator
+command documented above does not open physical motor ports.
