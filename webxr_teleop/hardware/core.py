@@ -20,6 +20,17 @@ def vector(q, n=7):
     return list(q)
 
 
+def teleop_scales(profile):
+    """Independent dimensionless gains; zero freezes that Cartesian component."""
+    result=[]
+    for key in ('translation_scale','rotation_scale'):
+        value=profile.get(key,1.0)
+        if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or value<0:
+            raise ValueError(f'{key} must be a finite nonnegative number')
+        result.append(float(value))
+    return tuple(result)
+
+
 def load_profile(path, live=False, sides=SIDES, require_motor_watchdog=True):
     p = json.loads(Path(path).read_text())
     if p.get('version') != 1:

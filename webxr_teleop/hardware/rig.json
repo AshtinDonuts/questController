@@ -325,5 +325,7 @@
     "planes": "Simulation CLI defaults, relative to each base; table is 0.02 m below base origin.",
     "verification": "Calibration hashes identify imported files only, not physical verification."
   },
-  "teleop_catch_up": false
+  "teleop_catch_up": false,
+  "translation_scale": 1.0,
+  "rotation_scale": 1.0
 }

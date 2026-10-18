@@ -8,7 +8,7 @@ import mujoco
 from scipy.spatial.transform import Rotation
 from ..mink_ik import MinkIK
 from ..planar_limits import PlanarBounds
-from .core import SIDES, JOINTS, HomeTrajectory, PERIOD, TTL, SettlingWindow
+from .core import SIDES, JOINTS, HomeTrajectory, PERIOD, TTL, SettlingWindow, teleop_scales
 from .ipc import send, receive
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +49,7 @@ def put_measured(model, data, profile, measured):
 class Planner:
     def __init__(self, profile, measured, sides=SIDES):
         self.profile = profile
+        self.translation_scale,self.rotation_scale=teleop_scales(profile)
         self.catch_up = profile.get('teleop_catch_up',False)
         if not isinstance(self.catch_up,bool):raise ValueError('teleop_catch_up must be boolean')
         self.sides = sides
@@ -172,8 +173,9 @@ class Planner:
                 if np.linalg.norm(p-o['last_hand']) > .12:
                     raise ValueError('Controller tracking jump')
                 o['last_hand']=p
-                desired_p=o['p']+self.basis@(p-o['hand'])
-                desired_r=self.basis@r@o['rotation'].T@self.basis.T@o['r']
+                desired_p=o['p']+self.translation_scale*(self.basis@(p-o['hand']))
+                delta_r=self.basis@r@o['rotation'].T@self.basis.T
+                desired_r=Rotation.from_rotvec(Rotation.from_matrix(delta_r).as_rotvec()*self.rotation_scale).as_matrix()@o['r']
                 if self.catch_up:
                     dp=desired_p-o['target_p']; rv=Rotation.from_matrix(desired_r@o['target_r'].T).as_rotvec()
                     alpha=1-math.exp(-dt/.06)

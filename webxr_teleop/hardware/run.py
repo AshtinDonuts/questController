@@ -14,7 +14,7 @@ import termios
 import time
 import tty
 
-from .core import SIDES, PERIOD, TTL, FEEDBACK_TTL, load_profile, validate_sequence, SettlingWindow
+from .core import SIDES, PERIOD, TTL, FEEDBACK_TTL, load_profile, validate_sequence, SettlingWindow, teleop_scales
 from .ipc import pair, send, receive
 from .endpoint import bind_control
 
@@ -52,6 +52,8 @@ def main():
     ap.add_argument('--manual-start',action='store_true',help='Single-arm five-second torque-off positioning, then software-watchdog powered hold')
     ap.add_argument('--startup',action='store_true',help='Explicit single-arm torque-on and verified current-position hold')
     ap.add_argument('--mode',choices=('mock','observe','live'),default='mock')
+    ap.add_argument('--translation-scale','--scale',type=float,default=None,help='Robot metres per controller metre; overrides profile (default 1)')
+    ap.add_argument('--rotation-scale',type=float,default=None,help='Robot angle per controller angle; overrides profile (default 1)')
     ap.add_argument('--profile',type=Path,default=DEFAULT_PROFILE)
     ap.add_argument('--lerobot-python',default='/home/King/miniconda3/envs/lerobot/bin/python')
     ap.add_argument('--socket',default=DEFAULT_SOCKET)
@@ -75,6 +77,11 @@ def main():
         ap.error('--startup requires --side left/right and mock/live mode')
     sides=SIDES if args.side=='both' else (args.side,)
     profile=load_profile(args.profile,live=args.mode=='live',sides=sides,require_motor_watchdog=not (args.manual_start or args.sequence))
+    for key in ('translation_scale','rotation_scale'):
+        if getattr(args,key) is not None:profile[key]=getattr(args,key)
+    try:translation_scale,rotation_scale=teleop_scales(profile)
+    except ValueError as exc:ap.error(str(exc))
+    print(f'Teleop sensitivity: translation {translation_scale:g}x, rotation {rotation_scale:g}x',flush=True)
     if args.sequence:
         if args.mode=='observe': ap.error('--sequence requires mock/live mode')
         validate_sequence(profile,sides,live=args.mode=='live')
