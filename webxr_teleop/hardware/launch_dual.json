@@ -1,0 +1,12 @@
+{
+  "mode": "live",
+  "side": "both",
+  "sequence": true,
+  "twin": true,
+  "profile": "rig.json",
+  "translation_scale": 1.0,
+  "rotation_scale": 1.0,
+  "teleop_joint_speed": 18.0,
+  "teleop_joint_acceleration": 60.0,
+  "gripper_speed": 1.0
+}

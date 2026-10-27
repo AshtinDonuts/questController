@@ -66,7 +66,7 @@
         3.14158
       ],
       "base_position": [
-        0.0,
+        -0.4075,
         0.0,
         0.02
       ],
@@ -164,13 +164,14 @@
       "motor_tracking_profile": {
         "velocity_counts": 14,
         "acceleration_counts": 4
-      }
+      },
+      "gripper_current_cap_counts": 200
     },
     "right": {
       "port": "/dev/ttyDXL_follower_right",
       "calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/right_follower.json",
-      "verified": false,
-      "verification_note": "Copied user-confirmed left mapping on 2026-10-16 at user request. Right physical mapping has not been independently checked.",
+      "verified": true,
+      "verification_note": "User explicitly requested copying the left joint mapping and its verification status to the right on 2026-10-27. This is an operator-approved status copy, not an independent right-arm physical test. Left source note: User confirmed left encoder-to-MuJoCo motion directions and visual pose on 2026-10-16. Mapping copied from rig_mirror_reversed_v2.json; watchdog verification remains separate.",
       "sign": [
         -1,
         -1,
@@ -221,7 +222,7 @@
         3.14158
       ],
       "base_position": [
-        0.0,
+        0.4075,
         0.0,
         0.02
       ],
@@ -313,19 +314,36 @@
         0.06902913545485385,
         -1.9742332740088202,
         -0.04141748127291231
-      ]
+      ],
+      "sequence_authorized": true,
+      "sequence_authorization_note": "User explicitly requested copying the left sequence verification/authorization settings to the right on 2026-10-27. Physical sequence verification remains false, matching the left. Left source note: User explicitly approved live workflow, automatic powered opening startup and removal of sleep joint-limit rejection in this chat on 2026-10-16. This is operator authorization, not physical verification."
     }
   },
   "provenance": {
     "lerobot_config": "/home/King/alohaX_lerobot_fork/lerobot/configs/robot/aloha.yaml",
-    "simulation_scene": "/home/King/Desktop/QuestController/scenes/single_viperx_scene.xml",
-    "simulation_robot": "/home/King/Desktop/QuestController/scenes/single_viperx.xml",
-    "usage": "Use --side left or --side right. Both entries share the single-arm display placement; it is not measured dual-arm mounting geometry.",
-    "mapping": "User-confirmed left mapping from rig_mirror_reversed_v2.json copied to both sides. Right remains unverified; per-side ports and calibration files preserved.",
+    "simulation_scene": "/home/King/Desktop/QuestController/scenes/dual_viperx_scene.xml",
+    "simulation_robot": "/home/King/Desktop/QuestController/scenes/dual_viperx.xml",
+    "usage": "Measured dual mounting: base centers 0.815 m apart, shoulder to shoulder and both forward. Supports one or both selected arms subject to existing commissioning checks.",
+    "mapping": "User-confirmed left mapping copied to the right. On 2026-10-27 the user explicitly requested copying the left mapping verification and sequence verification/authorization settings as well. Right port, calibration/fingerprint, electrical settings and measured mounting transform are preserved; no independent right physical test is claimed.",
     "planes": "Simulation CLI defaults, relative to each base; table is 0.02 m below base origin.",
-    "verification": "Calibration hashes identify imported files only, not physical verification."
+    "verification": "Calibration hashes identify imported files only, not physical verification.",
+    "mounting_geometry": {
+      "source": "User measurement reported 2026-10-27",
+      "base_center_separation_m": 0.815,
+      "layout": "Shoulder to shoulder, same horizontal line and height, both facing forward",
+      "world_frame": "+X right, +Y forward, +Z up; origin midway between base centers in X/Y",
+      "base_height_note": "Existing model base Z=0.02 m above table retained; absolute mounting height was not newly measured"
+    },
+    "right_mapping_status_copy": {
+      "source_arm": "left",
+      "requested_by": "user",
+      "date": "2026-10-27",
+      "independent_right_physical_test": false
+    }
   },
   "teleop_catch_up": false,
   "translation_scale": 1.0,
-  "rotation_scale": 1.0
+  "rotation_scale": 1.0,
+  "teleop_joint_speed_deg_s": 18.0,
+  "teleop_joint_acceleration_deg_s2": 60.0
 }

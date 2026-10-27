@@ -3,6 +3,8 @@
 Supports a telemetry.jsonl or the compressed regression fixture. Target replay is
 open-loop: it preserves the old requested world poses, even if the new IK lags.
 It does not reproduce live clutch rebasing, which depends on achieved poses.
+Recorded base placements are restored. Sources predating mounting metadata use
+the original 0.64 m dual layout; they are not silently retargeted to the live rig.
 """
 import argparse
 from dataclasses import asdict
@@ -21,12 +23,29 @@ from .recording import Recording
 from .run import ROOT, arm_state
 
 
+class RecordedRows(list):
+    def __init__(self,frames,base_positions):
+        super().__init__(frames)
+        self.base_positions=base_positions
+
+
 def load_rows(source):
     source = Path(source)
     if source.suffix == '.gz':
         with gzip.open(source, 'rt') as stream:
-            return json.load(stream)['frames']
-    return [json.loads(line) for line in source.read_text().splitlines()]
+            bundle=json.load(stream)
+        frames=bundle['frames'];metadata=bundle
+    else:
+        frames=[json.loads(line) for line in source.read_text().splitlines()]
+        manifest=source.with_name('manifest.json')
+        metadata=json.loads(manifest.read_text()) if manifest.exists() else {}
+    bases=metadata.get('base_positions')
+    if bases is None:
+        # All repository recordings/fixtures before mounting metadata used this
+        # dual placement. Old single scenes already placed the right base at 0.
+        bases=({'right':[0.,0.,.02]} if metadata.get('scene')=='single' else
+               {'left':[-.32,0.,.02],'right':[.32,0.,.02]})
+    return RecordedRows(frames,bases)
 
 
 def replay(rows, scene='dual', single_side='right', config=None):
@@ -35,6 +54,10 @@ def replay(rows, scene='dual', single_side='right', config=None):
     data = mujoco.MjData(model)
     sides = ('right', 'left') if scene == 'dual' else ('right',)
     source_sides = {s: s if scene == 'dual' else single_side for s in sides}
+    source_bases=getattr(rows,'base_positions',None)
+    if scene=='dual' and source_bases is not None:
+        for side in sides:
+            model.body_pos[model.body(side+'/base_link').id]=source_bases[side]
     first_q = np.array(rows[0]['qpos'])
     if scene == 'dual':
         data.qpos[:] = first_q
@@ -53,7 +76,9 @@ def replay(rows, scene='dual', single_side='right', config=None):
             source_arm = original['arms'][source_side]
             p = np.array(source_arm['target_position'])
             if scene == 'single':
-                p[0] -= .32 if source_side == 'right' else -.32
+                source_base=(source_bases[source_side] if source_bases is not None else
+                    [.32 if source_side=='right' else -.32,0.,.02])
+                p+=model.body_pos[model.body(side+'/base_link').id]-np.asarray(source_base)
             r = Rotation.from_quat(source_arm['target_orientation_xyzw']).as_matrix()
             old_q = data.qpos[arm.qids].copy()
             accepted = arm.solve(p, r, dt)

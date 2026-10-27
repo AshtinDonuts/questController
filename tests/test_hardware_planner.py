@@ -111,7 +111,7 @@ def test_stationary_controller_does_not_integrate_motor_sag(monkeypatch, side):
         q=copy.deepcopy(result['q'])
         q[side][1]-=math.radians(.3)
         for s in SIDES:
-            np.testing.assert_allclose(result['q'][s],original[s],atol=1e-8)
+            np.testing.assert_allclose(result['q'][s][:6],original[s][:6],atol=1e-8)
 
 
 def test_trigger_without_side_grip_keeps_arm_frozen(monkeypatch):
@@ -126,7 +126,7 @@ def test_trigger_without_side_grip_keeps_arm_frozen(monkeypatch):
         q['left'][1]-=math.radians(.01)
         result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='teleop',measured=q,hands=h))
         assert result['freeze']['left']
-        np.testing.assert_allclose(result['q']['left'],original['left'],atol=1e-8)
+        np.testing.assert_allclose(result['q']['left'][:6],original['left'][:6],atol=1e-8)
 
 
 def test_controller_upward_motion_still_tracks_with_motor_lag(monkeypatch):
@@ -169,7 +169,7 @@ def test_lag_pauses_command_lead_and_resumes_without_reset(monkeypatch):
     h['left']['grip']=False;clock[0]+=.02
     result=planner.step(dict(t=clock[0],seq=301,epoch=1,mode='teleop',measured=q,hands=h))
     assert result['freeze']['left']
-    np.testing.assert_allclose(result['q']['left'],q['left'])
+    np.testing.assert_allclose(result['q']['left'][:6],q['left'][:6])
 
 
 def test_opening_uses_three_times_original_trajectory_clock(monkeypatch):
@@ -208,7 +208,7 @@ def test_regrip_discards_released_translation_and_rotation(monkeypatch):
     np.testing.assert_allclose(result['diagnostics']['left']['desired_position'],expected_p)
     np.testing.assert_allclose(planner.origin['left']['target_r'],expected_r,atol=1e-12)
     np.testing.assert_allclose(planner.origin['left']['hand'],h['left']['position'])
-    np.testing.assert_allclose(result['q']['left'],q['left'],atol=1e-10)
+    np.testing.assert_allclose(result['q']['left'][:6],q['left'][:6],atol=1e-10)
 
 
 def test_default_teleop_uses_latest_target_without_catchup_pause(monkeypatch):

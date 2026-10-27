@@ -75,8 +75,8 @@ def test_hold_drift_fault_keeps_original_target_and_rejects_reset():
     script='''
 from webxr_teleop.hardware import worker
 class DriftingBus(worker.MockBus):
-    def read(self):
-        q,health=super().read()
+    def read(self, **kwargs):
+        q,health=super().read(**kwargs)
         if self.writes:q[0]+=.04
         return q,health
 worker.MockBus=DriftingBus

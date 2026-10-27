@@ -29,11 +29,20 @@ def test_hardware_websocket_rejects_replay_and_expired_tokens(tmp_path):
         hand=dict(tracked=True,position=dict(x=0,y=1,z=0),quaternion=dict(x=0,y=0,z=0,w=1),trigger=0,buttons={})
         msg=dict(type='controllers',reference_epoch=1,sequence=1,freshness=token,left=hand,right=hand)
         await peer.inbox.put(msg); await asyncio.sleep(.01)
-        assert server.snapshot()[0] is not None
+        first=server.snapshot()[0]
+        assert first is not None
+        assert first.packet_received_t>=first.received_t
+        assert first.packet_sequence==1 and first.packet_interval_ms is None
+        msg['sequence']=2
+        await peer.inbox.put(msg); await asyncio.sleep(.01)
+        second=server.snapshot()[0]
+        assert second.received_t==first.received_t  # Receipt never rejuvenates the token.
+        assert second.packet_received_t>first.packet_received_t
+        assert second.packet_sequence==2 and second.packet_interval_ms>0
         await peer.inbox.put(msg); await asyncio.sleep(.01)
         assert server.snapshot()[0] is None  # duplicated sequence
         await asyncio.sleep(.16)
-        msg['sequence']=2; await peer.inbox.put(msg); await asyncio.sleep(.01)
+        msg['sequence']=3; await peer.inbox.put(msg); await asyncio.sleep(.01)
         assert server.snapshot()[0] is None  # old token cannot rejuvenate buffered poses
         await peer.inbox.put(None); await task
         assert server.snapshot()[:2]==(None,None)

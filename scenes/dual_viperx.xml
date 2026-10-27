@@ -66,7 +66,8 @@
     </default>
   </default>
   <worldbody>
-    <body name="right/base_link" childclass="vx300s" pos="0.32 0 0.02" quat="0.7071067812 0 0 0.7071067812">
+    <!-- User-measured base-center spacing: 0.815 m, both facing +Y (2026-10-27). -->
+    <body name="right/base_link" childclass="vx300s" pos="0.4075 0 0.02" quat="0.7071067812 0 0 0.7071067812">
       <inertial pos="-0.0534774 -0.000562575 0.0205961" quat="-0.00292324 0.712517 0.00480387 0.701633" mass="0.969034" diaginertia="0.0071633 0.00602451 0.00169819" />
       <geom quat="1 0 0 1" class="visual" mesh="vx300s_1_base" />
       <geom quat="1 0 0 1" mesh="vx300s_1_base" class="collision" />
@@ -138,7 +139,7 @@
         </body>
       </body>
     </body>
-    <body name="left/base_link" childclass="vx300s" pos="-0.32 0 0.02" quat="0.7071067812 0 0 0.7071067812">
+    <body name="left/base_link" childclass="vx300s" pos="-0.4075 0 0.02" quat="0.7071067812 0 0 0.7071067812">
       <inertial pos="-0.0534774 -0.000562575 0.0205961" quat="-0.00292324 0.712517 0.00480387 0.701633" mass="0.969034" diaginertia="0.0071633 0.00602451 0.00169819" />
       <geom quat="1 0 0 1" class="visual" mesh="vx300s_1_base" />
       <geom quat="1 0 0 1" mesh="vx300s_1_base" class="collision" />

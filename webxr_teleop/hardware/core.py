@@ -62,6 +62,8 @@ def load_profile(path, live=False, sides=SIDES, require_motor_watchdog=True):
                 raise ValueError(f'{side}: calibration changed or has not been fingerprinted')
     if p['arms']['left']['port'] == p['arms']['right']['port']:
         raise ValueError('Follower ports must differ')
+    if live and len(sides)>1 and p['arms']['left']['base_position']==p['arms']['right']['base_position']:
+        raise ValueError('Dual-arm base positions coincide; configure the measured mounting transforms before live dual-arm control')
     if live and require_motor_watchdog and p.get('watchdog_verified') is not True:
         raise ValueError('Powered bus-watchdog stop must be verified before live operation')
     return p
@@ -104,13 +106,16 @@ class Guard:
         self.velocity = [0.]*7
         return self.goal[:]
 
-    def clutch(self, measured):
+    def clutch(self, measured, *, gripper_active=False):
         """Release motion authority without disarming; capture feedback only once."""
         if self.state == 'ARMED':
             if not self.frozen:
-                self.goal = vector(measured)
+                captured=vector(measured)
+                if gripper_active:captured[6]=self.goal[6]
+                self.goal=captured
             self.frozen = True
-            self.velocity = [0.]*7
+            self.velocity[:6] = [0.]*6
+            if not gripper_active:self.velocity[6]=0.
         return self.goal[:]
 
     def arm(self, measured, epoch):
@@ -134,8 +139,13 @@ class Guard:
             if not 0 <= now-msg['issued'] <= TTL:
                 raise ValueError('Expired command')
             q = vector(msg['q'])
+            gripper_active=msg.get('gripper_active',False) and msg.get('mode')=='teleop'
+            if not 0<=q[6]<=1:raise ValueError('Gripper target outside calibrated aperture')
+            previous_goal=self.goal[:]
             if msg.get('freeze'):
-                q = self.clutch(measured)
+                aperture=q[6]
+                q = self.clutch(measured,gripper_active=gripper_active)
+                if gripper_active:q[6]=aperture
 
             else:
                 self.frozen = False
@@ -159,12 +169,14 @@ class Guard:
                 if any(abs(v)>1e-9 for v in self.velocity):
                     raise ValueError('Planner start requires stationary command')
                 self.goal = q[:]
+                previous_goal = q[:]  # Named trajectory origin is a zero-velocity rebase.
                 self.velocity = [0.]*7
                 self.trajectory_start = identity
             # The planner owns trajectory speed/acceleration shaping. IPC may
             # skip frames, so differentiating targets at a fixed worker period
             # invents rate violations even for a bounded planner trajectory.
-            velocity = [0.]*7 if msg.get('freeze') else [(x-y)/dt for x, y in zip(q, self.goal)]
+            velocity = [0.]*7 if msg.get('freeze') else [(x-y)/dt for x, y in zip(q, previous_goal)]
+            if gripper_active:velocity[6]=(q[6]-previous_goal[6])/dt
             self.goal, self.velocity = q, velocity
             self.seq, self.last_command = msg['seq'], now
             return q[:]

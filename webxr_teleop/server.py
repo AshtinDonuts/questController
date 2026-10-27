@@ -40,6 +40,11 @@ class ControllerState:
     squeeze: bool = False
     buttons: dict[str, bool] = field(default_factory=dict)
     received_t: float = 0.0
+    # Hardware received_t remains the anti-replay challenge issuance time.
+    # These diagnostics describe server receipt, not headset capture/network lag.
+    packet_received_t: float | None = None
+    packet_sequence: int | None = None
+    packet_interval_ms: float | None = None
 
     def pressed(self, name: str) -> bool:
         return bool(self.buttons.get(name, False))
@@ -199,6 +204,7 @@ class VRServer:
         reference_epoch = None
         tokens = {}
         last_sequence = -1
+        last_packet_received_t = None
         async def challenge():
             while True:
                 now = time.perf_counter()
@@ -250,9 +256,16 @@ class VRServer:
                     left = _parse_controller(data.get("left"), sample_t)
                     right = _parse_controller(data.get("right"), sample_t)
                     with self._lock:
+                        for hand in (left,right):
+                            if hand is not None:
+                                hand.packet_received_t=now
+                                hand.packet_sequence=data.get('sequence')
+                                hand.packet_interval_ms=(1000*(now-last_packet_received_t)
+                                    if last_packet_received_t is not None else None)
                         self._controllers = {"left": left, "right": right}
                         self._last_packet_t = now
                         self.packet_count += 1
+                        last_packet_received_t = now
         except Exception as exc:  # noqa: BLE001 - a dropped headset must not kill the server
             print(f"[VR] Headset connection closed: {exc}")
         finally:

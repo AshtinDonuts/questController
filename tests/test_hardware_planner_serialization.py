@@ -22,5 +22,7 @@ def test_serialization_failure_keeps_planner_available_for_sleep(monkeypatch):
         assert messages[0]['type']=='fault'
         assert messages[0]['recoverable'] is True
         assert messages[0]['code']=='serialization'
-        assert messages[1]==dict(type='target',epoch=2,mode='sleep',diagnostic=True)
+        assert {k:messages[1][k] for k in ('type','epoch','mode','diagnostic')}==dict(type='target',epoch=2,mode='sleep',diagnostic=True)
+        assert messages[1]['planner_duration_ms']>=0
+        assert messages[1]['planner_queue_age_ms']>=0
     finally:parent.close();child.close()

@@ -104,7 +104,8 @@ Y homes both arms; A runs the home/start/save sequence for a shared episode; B d
 the shared episode and cancels homing. Losing either hand discards an active episode marker.
 Right-stick click shows both EEF orientations. MP4 contains both arms and their EEF axes;
 telemetry has `arms.left` and `arms.right`, while the legacy top-level pose fields remain right-arm data.
-The arms are 64 cm apart, with each workspace translated to its own base.
+The base centers are 81.5 cm apart, shoulder to shoulder and both facing forward (+Y), matching the user measurement reported on 2026-10-27. The horizontal origin is midway between them: left X=-0.4075 m, right X=+0.4075 m, both Y=0. Each workspace is translated to its own base. The existing model base Z=0.02 m above the table is retained.
+New session manifests record `base_positions`. Exact-target IK replay restores the source recording's placement; recordings/fixtures predating that metadata retain the original 64 cm dual layout (or their original single-arm placement), rather than being silently retargeted to the current mounting geometry.
 The kinematic IK enforces base-fixed planar boundaries and the table plane; it does not enforce inter-arm collision avoidance.
 
 Render the independent right-only, left-only, and simultaneous-motion check:

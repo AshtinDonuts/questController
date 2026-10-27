@@ -10,7 +10,12 @@ class Recording:
     def __init__(self, directory, model, fps, metadata, planar_limits=(), video_filter=None, camera='teleoperator_pov'):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
-        self.metadata = metadata
+        self.metadata = dict(metadata)
+        # Record the actual model placement so historical world-space targets
+        # remain replayable after mounting dimensions change.
+        self.metadata['base_positions']={side:model.body_pos[body].tolist()
+            for side in ('left','right')
+            if (body:=mujoco.mj_name2id(model,mujoco.mjtObj.mjOBJ_BODY,side+'/base_link'))>=0}
         self.camera = camera
         self.planar_limits = planar_limits
         self.fps = fps

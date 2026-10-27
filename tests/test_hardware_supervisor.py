@@ -83,7 +83,7 @@ def test_tracking_loss_during_home_latches_selected_arms_and_never_resumes(tmp_p
                 control_state['lost']=True
             await asyncio.sleep(.12)
             status=await asyncio.to_thread(control); assert status['state']==('FAULT' if failure=='motor' else 'HOLD'),status
-            if failure=='planner': assert 'watchdog' in status['reason'].lower()
+            if failure=='planner': assert any(x in status['reason'].lower() for x in ('watchdog','target expired'))
             elif failure!='motor': assert 'tracking lost' in status['reason']
             await asyncio.sleep(.1)
             stopped=await asyncio.to_thread(control)

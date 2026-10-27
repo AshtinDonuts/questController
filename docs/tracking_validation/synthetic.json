@@ -1,0 +1,65 @@
+{
+  "source": "synthetic two-stroke translation/rotation",
+  "results": {
+    "ideal/before": {
+      "frames_completed": 450,
+      "failure": null,
+      "position_rmse_mm": 27.609204656141312,
+      "rotation_rmse_deg": 11.410784812280852,
+      "peak_command_velocity_deg_s": 3.0983866769660593,
+      "peak_command_acceleration_deg_s2": 24.000000000005738,
+      "release_command_error_rad": 0.0,
+      "plant": "ideal"
+    },
+    "ideal/coordinated_same_limits": {
+      "frames_completed": 450,
+      "failure": null,
+      "position_rmse_mm": 24.7182292154673,
+      "rotation_rmse_deg": 10.181352257035078,
+      "peak_command_velocity_deg_s": 9.000000000000268,
+      "peak_command_acceleration_deg_s2": 24.000000000016136,
+      "release_command_error_rad": 0.0,
+      "plant": "ideal"
+    },
+    "ideal/after": {
+      "frames_completed": 450,
+      "failure": null,
+      "position_rmse_mm": 16.654305489458356,
+      "rotation_rmse_deg": 7.013667227305267,
+      "peak_command_velocity_deg_s": 18.000000000000373,
+      "peak_command_acceleration_deg_s2": 60.00000000001563,
+      "release_command_error_rad": 0.0,
+      "plant": "ideal"
+    },
+    "estimated_servo/before": {
+      "frames_completed": 450,
+      "failure": null,
+      "position_rmse_mm": 27.925065518618858,
+      "rotation_rmse_deg": 11.446208116262031,
+      "peak_command_velocity_deg_s": 3.0983866769660593,
+      "peak_command_acceleration_deg_s2": 24.000000000005738,
+      "release_command_error_rad": 0.0,
+      "plant": "estimated_servo"
+    },
+    "estimated_servo/coordinated_same_limits": {
+      "frames_completed": 450,
+      "failure": null,
+      "position_rmse_mm": 24.954507171401062,
+      "rotation_rmse_deg": 10.245397928354562,
+      "peak_command_velocity_deg_s": 9.000000000000268,
+      "peak_command_acceleration_deg_s2": 24.000000000016136,
+      "release_command_error_rad": 0.0,
+      "plant": "estimated_servo"
+    },
+    "estimated_servo/after": {
+      "frames_completed": 450,
+      "failure": null,
+      "position_rmse_mm": 17.05630016764865,
+      "rotation_rmse_deg": 7.163476000457336,
+      "peak_command_velocity_deg_s": 18.000000000000536,
+      "peak_command_acceleration_deg_s2": 60.00000000001576,
+      "release_command_error_rad": 0.0,
+      "plant": "estimated_servo"
+    }
+  }
+}

@@ -66,8 +66,8 @@
         3.12
       ],
       "base_position": [
-        -0.32,
-        0,
+        -0.4075,
+        0.0,
         0.02
       ],
       "base_quaternion_wxyz": [
@@ -153,8 +153,8 @@
         3.12
       ],
       "base_position": [
-        0.32,
-        0,
+        0.4075,
+        0.0,
         0.02
       ],
       "base_quaternion_wxyz": [
@@ -184,6 +184,15 @@
       ],
       "sequence_verified": false,
       "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose."
+    }
+  },
+  "provenance": {
+    "mounting_geometry": {
+      "source": "User measurement reported 2026-10-27",
+      "base_center_separation_m": 0.815,
+      "layout": "Shoulder to shoulder, same horizontal line and height, both facing forward",
+      "world_frame": "+X right, +Y forward, +Z up; origin midway between base centers in X/Y",
+      "base_height_note": "Existing model base Z=0.02 m above table retained; absolute mounting height was not newly measured"
     }
   }
 }

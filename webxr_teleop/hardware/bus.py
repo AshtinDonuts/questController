@@ -5,6 +5,8 @@ import math
 import os
 import time
 from .core import JOINTS, MOTORS
+from .gripper import current_cap, validate_calibration, gripper_speed, gripper_acceleration, feedback_aperture
+from .motion import motor_profile_counts, VELOCITY_UNIT_DEG_S, ACCELERATION_UNIT_DEG_S2
 
 
 class MockBus:
@@ -54,6 +56,9 @@ class MockBus:
     def opening_speed(self, enabled, counts=24, acceleration_counts=None):
         pass
 
+    def teleop_speed(self, enabled, speed=18., acceleration=60.):
+        return dict(mock=True,counts=motor_profile_counts(speed,acceleration))
+
     def watchdog(self):
         pass
 
@@ -68,6 +73,8 @@ class LeRobotBus:
         from lerobot.common.robot_devices.motors.dynamixel import DynamixelMotorsBus
         self.np, self.dxl = np, dxl
         self.cfg = profile['arms'][side]
+        self.gripper_speed=gripper_speed(profile)
+        self.gripper_acceleration=gripper_acceleration(profile)
         self.startup_allowed = startup
         self.startup_attempted = False
         self.startup_report = None
@@ -95,6 +102,7 @@ class LeRobotBus:
             calibration = json.loads(open(self.cfg['calibration']).read())
             if calibration['motor_names'] != list(MOTORS):
                 raise ValueError('Calibration motor order mismatch')
+            self.gripper_calibration=validate_calibration(calibration)
             self.bus.set_calibration(calibration)
             self.preflight = self.inspect()
         except BaseException:
@@ -141,11 +149,12 @@ class LeRobotBus:
                             and r['Torque_Enable']==[0]*9 and r['Bus_Watchdog']==[15]*9)
         if any(v != 0 for v in r['Bus_Watchdog']) and not reuse_stationary:
             raise ValueError('Existing watchdog configuration/fault: explicit supported-arm recovery required')
-        if not 0 < r['Goal_Current'][8] <= r['Current_Limit'][8]:
-            raise ValueError('Gripper must have an existing positive current cap')
+        cap=current_cap(r,self.cfg.get('gripper_current_cap_counts'),getattr(self,'_gripper_current_cap',None))
         velocity=self.np.asarray(r['Present_Velocity'],dtype=self.np.uint32).view(self.np.int32)
         if any(abs(v) > 2 for v in velocity):
             raise ValueError('Attach only to stationary arms')
+        self._gripper_current_cap=cap
+        r['gripper_current_cap']=cap
         # No writes here. Observe mode remains genuinely read-only.
         return r
 
@@ -158,9 +167,9 @@ class LeRobotBus:
         for i,n in enumerate(JOINTS):
             v = values[list(MOTORS).index(n)]
             q.append(math.radians((float(v)-self.cfg['offset_deg'][i])/self.cfg['sign'][i]))
-        q.append(float(values[-1])/100)
-        if not 0 <= q[-1] <= 1:
-            raise ValueError('Gripper feedback outside calibrated range')
+        calibration=getattr(self,'gripper_calibration',None) or validate_calibration(self.bus.calibration)
+        aperture,self.gripper_feedback=feedback_aperture(raw[-1],calibration)
+        q.append(aperture)
         return q, values
 
     def read_raw(self):
@@ -174,8 +183,16 @@ class LeRobotBus:
         watchdog = self.register('Bus_Watchdog')
         if torque != ([0]*9 if torque_off else [1]*9) or any(errors) or any(x == 255 for x in watchdog):
             raise RuntimeError('Motor torque/error/watchdog fault; no automatic recovery')
+        cap=self.verify_gripper_current()
         self.raw, self.last_q = raw, q[:]
-        return q, dict(torque=not torque_off, errors=0, watchdog=watchdog,raw_position=raw.tolist(),calibrated_position=values.tolist())
+        return q, dict(torque=not torque_off, errors=0, watchdog=watchdog,gripper_current_cap=cap,gripper_feedback=getattr(self,'gripper_feedback',None),gripper_motion_profile=getattr(self,'gripper_motion_profile',None),raw_position=raw.tolist(),calibrated_position=values.tolist())
+
+    def verify_gripper_current(self):
+        baseline=getattr(self,'_gripper_current_cap',None)
+        if baseline is None:
+            raise ValueError('Live gripper control rejected: no verified electrical current cap')
+        registers={key:self.register(key,['gripper']) for key in ('Operating_Mode','Goal_Current','Current_Limit')}
+        return current_cap(registers,self.cfg.get('gripper_current_cap_counts'),baseline)
 
     def disable_torque(self):
         # Include primary, shadow and gripper motors; verify every register.
@@ -184,9 +201,20 @@ class LeRobotBus:
         if self.register('Torque_Enable') != [0]*len(MOTORS):
             raise ConnectionError('Sleep torque-off readback mismatch')
 
+    def bounded_gripper_raw(self,raw,*,startup=False):
+        calibration=getattr(self,'gripper_calibration',None)
+        if calibration is None and getattr(self.bus,'calibration',None):calibration=validate_calibration(self.bus.calibration)
+        if calibration is None:return int(raw)  # Offline test adapters may omit calibration.
+        _,info=feedback_aperture(raw,calibration)
+        if startup and info['state']=='out_of_range':
+            raise ValueError('Startup raw hold rejected: gripper outside endpoint tolerance')
+        lo,hi=sorted((calibration['closed_raw'],calibration['open_raw']))
+        return int(min(hi,max(lo,raw)))
+
     def write_raw_hold(self, raw):
         """Preload current counts with shared primary/shadow goals (<=2 ticks apart)."""
         raw = raw.copy()
+        raw[-1]=self.bounded_gripper_raw(raw[-1],startup=True)
         for primary, shadow in ((1,2),(3,4)):
             if abs(int(raw[primary])-int(raw[shadow]))>2:
                 raise ValueError('Raw primary/shadow positions differ by more than 2 ticks')
@@ -216,6 +244,8 @@ class LeRobotBus:
             self.preflight=self.inspect()
             before=self.read_raw()
             q,_=self.decode(before)
+            if (getattr(self,'gripper_feedback',None) or {}).get('state')=='out_of_range':
+                raise ValueError('Startup rejected: gripper encoder outside calibrated range; resolve before enabling control')
             if not ignore_model_limits and any(not lo<=v<=hi for v,lo,hi in zip(q[:6],self.cfg['lower_rad'],self.cfg['upper_rad'])):
                 raise ValueError('Startup pose outside configured joint limits')
             safe_to_hold=True
@@ -269,12 +299,20 @@ class LeRobotBus:
     def raw_target(self, q):
         # Holding the last read pose uses exact encoder ticks, avoiding float roundoff.
         if q == self.last_q:
-            return [int(self.raw[list(MOTORS).index(n)]) for n in self.command_names]
+            raw=[int(self.raw[list(MOTORS).index(n)]) for n in self.command_names]
+            raw[-1]=self.bounded_gripper_raw(raw[-1])
+            return raw
         values = self.np.array([math.degrees(x)*s+o for x,s,o in zip(q[:6],self.cfg['sign'],self.cfg['offset_deg'])]+[q[6]*100])
         return self.bus.revert_calibration(values, self.command_names).tolist()
 
     def write(self, q):
+        if getattr(self, 'torque_release_attempted', False):
+            raise RuntimeError('Sleep torque is disabled')
+        if getattr(self,'_gripper_current_cap',None) is None:
+            raise ValueError('Live gripper control rejected: no verified electrical current cap')
         raw = self.raw_target(q)
+        if self.np.array_equal(raw,getattr(self,'_last_written_raw',None)):
+            return False  # Health reads continue; unchanged goals need no new motor profile.
         # Shadow IDs follow primary commands. Verify they would receive compatible raw goals.
         vals = self.np.array([math.degrees(q[i])*self.cfg['sign'][i]+self.cfg['offset_deg'][i] for i in (1,2)])
         shadows = self.bus.revert_calibration(vals, ['shoulder_shadow','elbow_shadow'])
@@ -289,6 +327,8 @@ class LeRobotBus:
         actual = self.np.asarray(self.register('Goal_Position', self.command_names),dtype=self.np.uint32).view(self.np.int32)
         if not self.np.array_equal(actual, raw):
             raise ConnectionError('Goal-position readback mismatch')
+        self._last_written_raw=raw.copy()
+        return True
 
     def opening_speed(self, enabled, counts=24, acceleration_counts=None):
         """Temporary opening profiles; restore exact prior RAM values on exit."""
@@ -313,15 +353,37 @@ class LeRobotBus:
                 raise ConnectionError(f'Opening {field} readback failed')
         if not enabled:self._opening_profiles=None
 
+    def teleop_speed(self, enabled, speed=18., acceleration=60.):
+        if not enabled:
+            self.opening_speed(False);return None
+        drive=self.register('Drive_Mode')
+        if any(v & 12 for v in drive[:8]):
+            raise ValueError('Teleop requires velocity-based profiles and no automatic torque-on')
+        velocity_counts,acceleration_counts=motor_profile_counts(speed,acceleration)
+        self.opening_speed(True,counts=velocity_counts,acceleration_counts=acceleration_counts)
+        return dict(velocity_counts=velocity_counts,acceleration_counts=acceleration_counts,
+                    velocity_deg_s=velocity_counts*VELOCITY_UNIT_DEG_S,
+                    acceleration_deg_s2=acceleration_counts*ACCELERATION_UNIT_DEG_S2,
+                    drive_mode=drive,readback_verified=True)
+
     def configure_motion_caps(self):
         # RAM profiles only. Explicit arm tuning overrides prior arm caps;
-        # absent tuning preserves the legacy min-cap policy and gripper behavior.
+        # absent arm tuning preserves the legacy arm min-cap policy.
+        # Gripper profile follows the requested aperture speed with headroom.
         # XM-series velocity: .229 rpm/count; acceleration: 214.577 rpm/min/count.
         c=self.bus.calibration
         i=c['motor_names'].index('gripper')
         gripper_degrees=abs(c['end_pos'][i]-c['start_pos'][i])*360/4096
-        velocities=[10.]*8+[.20*gripper_degrees]
+        velocities=[10.]*8+[getattr(self,'gripper_speed',gripper_speed({}))*gripper_degrees]
         caps=[int(v/1.374) for v in velocities]
+        gripper_cap=math.ceil(1.5*velocities[-1]/VELOCITY_UNIT_DEG_S)
+        if not 1<=gripper_cap<=32767:
+            raise ValueError('Requested gripper speed exceeds representable motor profile range')
+        acceleration=getattr(self,'gripper_acceleration',gripper_acceleration({'gripper_speed':getattr(self,'gripper_speed',gripper_speed({}))}))
+        gripper_acceleration_cap=math.ceil(2*acceleration*gripper_degrees/ACCELERATION_UNIT_DEG_S2)
+        if not 1<=gripper_acceleration_cap<=32767:
+            raise ValueError('Requested gripper acceleration exceeds representable motor profile range')
+        caps[-1]=gripper_cap
         if min(caps)<1:
             raise ValueError('Gripper calibration cannot support a representable safe speed cap')
         tuning=self.cfg.get('motor_tracking_profile')
@@ -335,6 +397,7 @@ class LeRobotBus:
         for field,address,limits in [('Profile_Velocity',112,caps),('Profile_Acceleration',108,[1]*9)]:
             previous=self.preflight[field]
             desired=[min(old,cap) if old else cap for old,cap in zip(previous,limits)]
+            desired[-1]=gripper_cap if field=='Profile_Velocity' else gripper_acceleration_cap
             if tuning is not None:
                 desired[:8]=[tuning['velocity_counts' if field=='Profile_Velocity' else 'acceleration_counts']]*8
             for n,value in zip(MOTORS,desired):
@@ -343,6 +406,8 @@ class LeRobotBus:
                     raise ConnectionError(f'Could not apply {field}')
             if self.register(field)!=desired:
                 raise ConnectionError(f'{field} readback mismatch')
+        self.gripper_motion_profile=dict(speed_aperture_s=getattr(self,'gripper_speed',gripper_speed({})),
+            acceleration_aperture_s2=acceleration,velocity_counts=gripper_cap,acceleration_counts=gripper_acceleration_cap,readback_verified=True)
 
     def watchdog(self):
         # RAM watchdog only; never clear a fault automatically.

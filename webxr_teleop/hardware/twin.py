@@ -21,7 +21,9 @@ def run(sock, profile, sides):
         viewer=mujoco.viewer.launch_passive(model,data)
         viewer_threads=[t for t in threading.enumerate() if t not in previous_threads]
         viewer.cam.lookat[:]=[0,.25,.3]
-        viewer.cam.distance=1.3;viewer.cam.azimuth=0;viewer.cam.elevation=-20
+        viewer.cam.distance=1.6 if len(sides)>1 else 1.3
+        viewer.cam.azimuth=-90 if len(sides)>1 else 0
+        viewer.cam.elevation=-20
         row=None
         while viewer.is_running():
             messages=receive(sock)

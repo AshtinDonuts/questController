@@ -246,6 +246,8 @@ async def test_live_runner_packets_episode_and_mp4(tmp_path, reset_during_record
                 process.terminate();process.wait(timeout=10)
     manifest=json.loads((output/'manifest.json').read_text())
     assert manifest['status']=='completed'
+    assert manifest['base_positions']['right']==([.4075,0.,.02] if scene=='dual' else [0.,0.,.02])
+    if scene=='dual':assert manifest['base_positions']['left']==[-.4075,0.,.02]
     assert manifest['episodes']
     if reset_during_recording:
         assert not any(e['saved'] for e in manifest['episodes'])

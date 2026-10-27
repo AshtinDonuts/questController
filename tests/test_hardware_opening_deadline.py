@@ -13,7 +13,8 @@ from webxr_teleop.hardware.run import DEFAULT_PROFILE
 @pytest.mark.parametrize('interrupt',[False,True])
 def test_opening_deadline_holds_current_pose_without_auto_teleop(tmp_path,interrupt):
     profile=json.loads(DEFAULT_PROFILE.read_text())
-    profile['arms']['left']['opening_rad'][5]=1.5  # trajectory exceeds ten seconds
+    profile['arms']['left']['initial_rad'][5]=-2.9
+    profile['arms']['left']['opening_rad'][5]=2.9  # exceeds ten seconds even at 3x speed
     source=tmp_path/'profile.json';source.write_text(json.dumps(profile))
     private=tmp_path/'private';private.mkdir(mode=0o700)
     endpoint=str(private/'control.sock');output=tmp_path/'session'
@@ -48,7 +49,7 @@ def test_opening_deadline_holds_current_pose_without_auto_teleop(tmp_path,interr
             held=control();assert held['feedback']['left']['state']=='HOLD'
             position=held['feedback']['left']['q']
             if not interrupt:
-                assert abs(position[5]-1.5)>.03  # target deliberately not reached
+                assert abs(position[5]-2.9)>.03  # target deliberately not reached
                 assert control('reset')['state']=='READY'  # headset still required for teleop
             time.sleep(.2)
             assert control()['feedback']['left']['q']==position

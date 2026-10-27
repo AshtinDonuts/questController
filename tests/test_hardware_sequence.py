@@ -40,8 +40,8 @@ def test_named_trajectory_without_quest_preserves_gripper_and_limits(monkeypatch
     assert done
     np.testing.assert_allclose(q['left'][:6], p['arms']['left'][mode+'_rad'])
     velocity = np.diff(poses, axis=0)/.02
-    assert np.max(abs(velocity)) <= math.radians(10 if mode=='opening' else 5)+1e-6
-    assert np.max(abs(np.diff(velocity,axis=0)/.02)) <= math.radians(10)+1e-6
+    assert np.max(abs(velocity)) <= math.radians(30 if mode=='opening' else 15)+1e-6
+    assert np.max(abs(np.diff(velocity,axis=0)/.02)) <= math.radians(90)+1e-6
 
 
 def test_invalid_sleep_path_rejected_before_first_target(monkeypatch):

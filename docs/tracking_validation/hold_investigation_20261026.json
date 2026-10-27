@@ -1,0 +1,141 @@
+{
+  "20261026_163032_965319": {
+    "source": "teleop_sessions/hardware_20261026_163032_965319/hardware.jsonl",
+    "active_seconds": 53.33004677598365,
+    "tracking_holds": [
+      {
+        "elapsed_s": 46.96024407912046,
+        "reason": "Controller tracking lost: left missing, right missing"
+      }
+    ],
+    "metrics": {
+      "controller_freshness_upper_bound_ms": {
+        "median": 37.00996795669198,
+        "p95": 61.93578015081585,
+        "p99": 73.36004165466875,
+        "maximum": 109.68077811412513
+      },
+      "planner_duration_ms": {
+        "median": 2.047904534265399,
+        "p95": 4.078988975379616,
+        "p99": 4.96812510304153,
+        "maximum": 7.036625174805522
+      },
+      "serial_write_and_readback_ms": {
+        "median": 2.975315903313458,
+        "p95": 3.0719239613972604,
+        "p99": 3.172279002610594,
+        "maximum": 4.880648804828525
+      },
+      "feedback_packet_bytes": {
+        "median": 1934.5,
+        "p95": 2195.0,
+        "p99": 2204.0,
+        "maximum": 2220.0
+      },
+      "feedback_period_ms": {
+        "median": 20.000522024929523,
+        "p95": 21.00313501432538,
+        "p99": 21.188542060554024,
+        "maximum": 41.99605900794268
+      }
+    },
+    "expired_forward_examples": [],
+    "gripper_states": [],
+    "skipped_feedback_sequences": 0,
+    "arm_settings": {
+      "translation_scale": 1.0,
+      "rotation_scale": 1.0,
+      "teleop_joint_speed_deg_s": 18.0,
+      "teleop_joint_acceleration_deg_s2": 60.0,
+      "teleop_catch_up": false
+    }
+  },
+  "20261026_165811_759421": {
+    "source": "teleop_sessions/hardware_20261026_165811_759421/hardware.jsonl",
+    "active_seconds": 39.289965994190425,
+    "tracking_holds": [
+      {
+        "elapsed_s": 21.130252617178485,
+        "reason": "Motor hold: left: Controller target expired at motor execution"
+      },
+      {
+        "elapsed_s": 28.590408154996112,
+        "reason": "Controller tracking lost: left age 150 ms, right age 150 ms"
+      },
+      {
+        "elapsed_s": 49.180525937117636,
+        "reason": "Controller tracking lost: left age 151 ms, right age 151 ms"
+      },
+      {
+        "elapsed_s": 56.670364468125626,
+        "reason": "Motor hold: left: Controller target expired at motor execution"
+      },
+      {
+        "elapsed_s": 61.75022355513647,
+        "reason": "Controller tracking lost: left age 152 ms, right age 152 ms"
+      },
+      {
+        "elapsed_s": 72.23030414804816,
+        "reason": "Motor hold: left: Controller target expired at motor execution"
+      }
+    ],
+    "metrics": {
+      "controller_freshness_upper_bound_ms": {
+        "median": 38.24772499501705,
+        "p95": 67.54483195254579,
+        "p99": 98.87241304386426,
+        "maximum": 143.99536093696952
+      },
+      "planner_duration_ms": {
+        "median": 2.8476049192249775,
+        "p95": 5.060751922428608,
+        "p99": 5.944728804752234,
+        "maximum": 7.940636947751045
+      },
+      "serial_write_and_readback_ms": {
+        "median": 2.9845060780644417,
+        "p95": 3.0886910390108824,
+        "p99": 3.239247570745647,
+        "maximum": 6.100933998823166
+      },
+      "feedback_packet_bytes": {
+        "median": 2366.0,
+        "p95": 2404.0,
+        "p99": 2412.0,
+        "maximum": 2432.0
+      },
+      "feedback_period_ms": {
+        "median": 20.001498516649008,
+        "p95": 21.008560014888644,
+        "p99": 22.298787718173102,
+        "maximum": 41.98490991257131
+      }
+    },
+    "expired_forward_examples": [
+      {
+        "elapsed_s": 21.09007490798831,
+        "result_source_age_ms": 151.1567879933864,
+        "latest_controller_age_ms": 99.92787498049438,
+        "planner_job_age_ms": 10.018771979957819
+      },
+      {
+        "elapsed_s": 72.20006138109602,
+        "result_source_age_ms": 153.99138303473592,
+        "latest_controller_age_ms": 52.70324111916125,
+        "planner_job_age_ms": 9.9960220977664
+      }
+    ],
+    "gripper_states": [
+      "in_range"
+    ],
+    "skipped_feedback_sequences": 0,
+    "arm_settings": {
+      "translation_scale": 1.0,
+      "rotation_scale": 1.0,
+      "teleop_joint_speed_deg_s": 18.0,
+      "teleop_joint_acceleration_deg_s2": 60.0,
+      "teleop_catch_up": false
+    }
+  }
+}

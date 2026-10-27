@@ -10,16 +10,17 @@ from webxr_teleop.hardware.twin import run
 
 
 @pytest.mark.skipif(not os.environ.get('DISPLAY'),reason='requires an X display (use xvfb-run)')
-def test_measured_twin_opens_updates_and_exits():
+@pytest.mark.parametrize('sides',[('left',),('left','right')])
+def test_measured_twin_opens_updates_and_exits(sides):
     profile=json.loads(DEFAULT_PROFILE.read_text())
     parent,child=pair()
-    proc=mp.get_context('spawn').Process(target=run,args=(child,profile,('left',)))
+    proc=mp.get_context('spawn').Process(target=run,args=(child,profile,sides))
     proc.start();child.close()
-    q=profile['arms']['left']['initial_rad']+[.2]
+    measured={s:profile['arms'][s]['initial_rad']+[.2] for s in sides}
     try:
         for i in range(60):
-            send(parent,dict(t=time.monotonic(),feedback_fresh=i<45,measured={'left':q},
-                command={'diagnostics':{'left':dict(desired_position=[0,.3,.4],filtered_position=[0,.3,.3])}}))
+            send(parent,dict(t=time.monotonic(),feedback_fresh=i<45,measured=measured,
+                command={'diagnostics':{s:dict(desired_position=[0,.3,.4],filtered_position=[0,.3,.3]) for s in sides}}))
             time.sleep(.05)
             assert proc.is_alive(),f'Viewer exited unexpectedly: {proc.exitcode}'
         send(parent,dict(op='shutdown'));proc.join(5)

@@ -25,7 +25,7 @@ def is_hardware_process(args):
     if i+1>=len(args) or args[i+1] not in ('webxr_teleop.hardware.run','webxr_teleop.hardware.worker'):return False
     options=args[i+2:]
     if '--mode=mock' in options or any(a=='--mode' and b=='mock' for a,b in zip(options,options[1:])):return False
-    if options and options[0] in ('status','stop','reset','sleep'):return False
+    if options and options[0] in ('status','stop','reset','sleep','restart'):return False
     return True
 
 

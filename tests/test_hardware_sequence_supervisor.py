@@ -14,17 +14,22 @@ import websockets
 import pytest
 
 
-@pytest.mark.parametrize('failure,side', [('tracking','left'),('stop','left'),('complete','left')])
+@pytest.mark.parametrize('failure,side', [('tracking','left'),('stop','left'),('complete','left'),
+    ('tracking','both'),('stop','both'),('complete','both'),
+    ('teleop_tracking_left','both'),('teleop_tracking_right','both'),('motor','both')])
 def test_sequence_opening_clutch_sleep_and_interruptions(tmp_path,failure,side):
     listener=socket.socket(); listener.bind(('127.0.0.1',0)); port=listener.getsockname()[1]; listener.close()
     private=tmp_path/'private'; private.mkdir(mode=0o700)
     endpoint=str(private/'control.sock'); output=tmp_path/'session'
     from webxr_teleop.hardware.run import DEFAULT_PROFILE
+    config_args=(['--config',str(DEFAULT_PROFILE.with_name('launch_dual.json')),'--no-twin']
+        if side=='both' else [])
     profile=json.loads(DEFAULT_PROFILE.read_text())
-    profile['arms'][side]['initial_rad'][0]=-.04
+    sides=('left','right') if side=='both' else (side,)
+    for s in sides:profile['arms'][s]['initial_rad'][0]=-.04
     profile_path=tmp_path/'profile.json'; profile_path.write_text(json.dumps(profile))
     log=(tmp_path/'supervisor.log').open('w')
-    proc=subprocess.Popen([sys.executable,'-m','webxr_teleop.hardware.run','--mode','mock','--sequence','--port',str(port),
+    proc=subprocess.Popen([sys.executable,'-m','webxr_teleop.hardware.run']+config_args+['--mode','mock','--sequence','--port',str(port),
         '--profile',str(profile_path),'--socket',endpoint,'--output',str(output),'--seconds','25']+['--side',side],env=dict(os.environ,MUJOCO_GL='egl'),stdout=log,stderr=log)
     def control(action='status'):
         client=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); client.settimeout(2)
@@ -41,7 +46,7 @@ def test_sequence_opening_clutch_sleep_and_interruptions(tmp_path,failure,side):
                 ws=await websockets.connect(f'wss://127.0.0.1:{port}',ssl=ctx); break
             except (OSError,TimeoutError): await asyncio.sleep(.05)
         assert ws is not None
-        control_state=dict(x=False,y=False,lost=False,grip=False,dx=0.)
+        control_state=dict(x=False,y=False,lost=False,lost_right=False,grip=False,left_grip=None,dx=0.)
         token=[None]; running=[True]
         async def reader():
             async for raw in ws:
@@ -52,10 +57,11 @@ def test_sequence_opening_clutch_sleep_and_interruptions(tmp_path,failure,side):
             while running[0]:
                 hand=dict(tracked=True,position=dict(x=control_state['dx'],y=1.2,z=-.4),quaternion=dict(x=0,y=0,z=0,w=1),trigger=0,
                     buttons=dict(squeeze=control_state['grip']))
-                left=dict(hand,buttons=dict(squeeze=control_state['grip'],x=control_state['x'],y=control_state['y']))
+                left=dict(hand,buttons=dict(squeeze=(control_state['grip'] if control_state['left_grip'] is None
+                    else control_state['left_grip']),x=control_state['x'],y=control_state['y']))
                 seq+=1
                 await ws.send(json.dumps(dict(type='controllers',reference_epoch=1,freshness=token[0],sequence=seq,
-                    left=None if control_state['lost'] else left,right=hand)))
+                    left=None if control_state['lost'] else left,right=None if control_state['lost_right'] else hand)))
                 await asyncio.sleep(.015)
         reading=asyncio.create_task(reader()); streaming=asyncio.create_task(stream())
         try:
@@ -75,11 +81,36 @@ def test_sequence_opening_clutch_sleep_and_interruptions(tmp_path,failure,side):
             control_state['grip']=True
             for i in range(40):
                 control_state['dx']=i*.0004; await asyncio.sleep(.02)
+            if side=='both' and failure=='complete':
+                control_state['left_grip']=False
+                await asyncio.sleep(.15)
+                one_held=await asyncio.to_thread(control)
+                for _ in range(15):
+                    control_state['dx']+=.0004;await asyncio.sleep(.02)
+                later=await asyncio.to_thread(control)
+                assert later['state']=='ARMED',later
+                assert later['feedback']['left']['q'][:6]==one_held['feedback']['left']['q'][:6]
+                assert max(abs(a-b) for a,b in zip(later['feedback']['right']['q'][:6],
+                    one_held['feedback']['right']['q'][:6]))>1e-5
+                control_state['left_grip']=None
             control_state['grip']=False
             await asyncio.sleep(.4)
             held=await asyncio.to_thread(control)
             await asyncio.sleep(.2)
-            assert (await asyncio.to_thread(control))['feedback'][side]['q']==held['feedback'][side]['q']
+            later=await asyncio.to_thread(control)
+            assert all(later['feedback'][s]['q']==held['feedback'][s]['q'] for s in sides)
+            if failure.startswith('teleop_tracking_'):
+                control_state['lost' if failure.endswith('left') else 'lost_right']=True
+                await asyncio.sleep(.2)
+                stopped=await asyncio.to_thread(control)
+                assert stopped['state']=='HOLD' and 'Controller tracking lost' in stopped['reason'],stopped
+                assert all(stopped['feedback'][s]['state']=='HOLD' for s in sides)
+                control_state.update(lost=False,lost_right=False,grip=True,dx=.3)
+                await asyncio.sleep(.25)
+                restored=await asyncio.to_thread(control)
+                assert restored['state']=='HOLD'
+                assert all(restored['feedback'][s]['q']==stopped['feedback'][s]['q'] for s in sides)
+                return
             control_state['y']=True
             if failure=='complete':control_state['grip']=True
             await asyncio.sleep(1.15)
@@ -88,7 +119,7 @@ def test_sequence_opening_clutch_sleep_and_interruptions(tmp_path,failure,side):
                 if failure=='tracking':control_state['lost']=True
                 await asyncio.sleep(5)
                 status=await asyncio.to_thread(control); assert status['state']=='PARKED',status
-                assert status['feedback'][side]['health']['torque'] is False is False
+                assert all(status['feedback'][s]['health']['torque'] is False for s in sides)
                 assert (await asyncio.to_thread(control,'reset'))['state']=='PARKED'
                 return
             if failure=='stop':

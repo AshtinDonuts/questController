@@ -19,9 +19,26 @@ class IKResult:
     plane_limited: bool = False
 
 
+class JointMotionLimit(mink.Limit):
+    """Joint speed and acceleration in the same QP; other DOFs remain locked."""
+    def __init__(self,model,dofs,speed,acceleration):
+        self.dofs=dofs
+        self.speed=speed
+        self.acceleration=acceleration
+        self.previous=np.zeros(len(dofs))
+        self.projection=np.eye(model.nv)
+
+    def compute_qp_inequalities(self,configuration,dt):
+        lower=np.zeros(configuration.model.nv);upper=lower.copy()
+        lower[self.dofs]=np.maximum(-self.speed,self.previous-self.acceleration*dt)
+        upper[self.dofs]=np.minimum(self.speed,self.previous+self.acceleration*dt)
+        return mink.Constraint(G=np.vstack((self.projection,-self.projection)),
+                               h=np.concatenate((upper*dt,-lower*dt)))
+
+
 class MinkIK:
     def __init__(self, model, data, joint_ids, site, *, joint_speed=math.radians(60),
-                 damping_cost=0.02, posture_cost=0.005, planar_bounds=None):
+                 damping_cost=0.02, posture_cost=0.005, planar_bounds=None, joint_acceleration=None):
         if not np.isfinite(joint_speed) or joint_speed <= 0:
             raise ValueError('joint_speed must be finite and positive')
         if not all(np.isfinite(x) and x >= 0 for x in (damping_cost, posture_cost)):
@@ -52,11 +69,17 @@ class MinkIK:
         self.planes = PlanarLimit(model, data, prefix+'/base_link', planar_bounds)
         if np.min(self.planes.distances(data)) < -1e-8:
             raise ValueError('Initial arm configuration violates the configured planar bounds')
-        self.limits = [self.configuration_limit, mink.VelocityLimit(model, velocity_limits), self.planes]
+        if joint_acceleration is not None and (not np.isfinite(joint_acceleration) or joint_acceleration<=0):
+            raise ValueError('joint_acceleration must be finite and positive')
+        self.motion_limit=(JointMotionLimit(model,self.dofs,joint_speed,joint_acceleration)
+                           if joint_acceleration is not None else None)
+        self.limits = [self.configuration_limit,
+                       self.motion_limit or mink.VelocityLimit(model, velocity_limits), self.planes]
 
     def set_reference(self, qpos):
         """A small posture preference towards the pose at clutch engagement."""
         self.posture.set_target(qpos.copy())
+        if self.motion_limit is not None:self.motion_limit.previous[:]=0
 
     def advance(self, data, p, r, dt):
         if not np.isfinite(dt) or dt <= 0 or not np.all(np.isfinite(p)) or not np.all(np.isfinite(r)):
@@ -82,7 +105,12 @@ class MinkIK:
                 or np.any(candidate > self.configuration_limit.upper[self.qids] + 1e-7)):
             return IKResult(False, 0., 0., reason='IK joint limit violation')
         fraction = self.planes.safe_fraction(data.qpos, self.configuration.q)
+        if self.motion_limit is not None and fraction<1-1e-8:
+            return IKResult(False,0.,0.,reason='Finite path requires geometry stop',plane_limited=True)
+        previous_q=data.qpos[self.qids].copy()
         data.qpos[self.qids] += fraction*(candidate-data.qpos[self.qids])
+        if self.motion_limit is not None:
+            self.motion_limit.previous=(data.qpos[self.qids]-previous_q)/dt
         speed *= fraction
         mujoco.mj_forward(self.model, data)
         actual_p = data.site_xpos[self.site]

@@ -1,0 +1,78 @@
+{
+  "teleop_sessions/hardware_20261021_144559_345063/hardware.jsonl": {
+    "active_tick_samples": 1683,
+    "controller_freshness_upper_bound_ms": {
+      "median": 35.03197093959898,
+      "p95": 58.650002197828144,
+      "maximum": 149.3518939241767
+    },
+    "planner_start_to_supervisor_tick_ms": {
+      "median": 18.84699088986963,
+      "p95": 19.77322878083214,
+      "maximum": 20.647776080295444
+    },
+    "feedback_goal_error_deg": {
+      "median": 1.1297096941969615,
+      "p95": 2.124416652308997,
+      "maximum": 2.4051820068093805
+    },
+    "limitations": "Tick-weighted, cached samples may repeat. Controller timestamp is server challenge issuance, not XR capture. Old logs cannot separate solve time, one-way network time or serial execution latency. Feedback goal error compares reported goal and encoder position, not optical EEF ground truth."
+  },
+  "teleop_sessions/hardware_20261021_160846_292951/hardware.jsonl": {
+    "active_tick_samples": 2505,
+    "controller_freshness_upper_bound_ms": {
+      "median": 35.350523074157536,
+      "p95": 58.71437727473676,
+      "maximum": 66.55944208614528
+    },
+    "planner_start_to_supervisor_tick_ms": {
+      "median": 18.814345938153565,
+      "p95": 19.744726736098528,
+      "maximum": 19.91490100044757
+    },
+    "feedback_goal_error_deg": {
+      "median": 1.2626495092415762,
+      "p95": 2.3893130114233587,
+      "maximum": 2.627471084058258
+    },
+    "limitations": "Tick-weighted, cached samples may repeat. Controller timestamp is server challenge issuance, not XR capture. Old logs cannot separate solve time, one-way network time or serial execution latency. Feedback goal error compares reported goal and encoder position, not optical EEF ground truth."
+  },
+  "teleop_sessions/hardware_20261021_162216_625053/hardware.jsonl": {
+    "active_tick_samples": 4348,
+    "controller_freshness_upper_bound_ms": {
+      "median": 35.517644544597715,
+      "p95": 58.933153055841,
+      "maximum": 147.57860894314945
+    },
+    "planner_start_to_supervisor_tick_ms": {
+      "median": 18.84964801138267,
+      "p95": 19.746101810596883,
+      "maximum": 20.184668013826013
+    },
+    "feedback_goal_error_deg": {
+      "median": 1.432544036616736,
+      "p95": 2.3957433037947293,
+      "maximum": 2.5766259087367476
+    },
+    "limitations": "Tick-weighted, cached samples may repeat. Controller timestamp is server challenge issuance, not XR capture. Old logs cannot separate solve time, one-way network time or serial execution latency. Feedback goal error compares reported goal and encoder position, not optical EEF ground truth."
+  },
+  "teleop_sessions/hardware_20261021_162511_778874/hardware.jsonl": {
+    "active_tick_samples": 3453,
+    "controller_freshness_upper_bound_ms": {
+      "median": 34.998595947399735,
+      "p95": 58.58556842431426,
+      "maximum": 108.39045001193881
+    },
+    "planner_start_to_supervisor_tick_ms": {
+      "median": 18.814162933267653,
+      "p95": 19.74194038193673,
+      "maximum": 22.661839961074293
+    },
+    "feedback_goal_error_deg": {
+      "median": 1.2317332197178297,
+      "p95": 2.4584681790522445,
+      "maximum": 2.5615993492135996
+    },
+    "limitations": "Tick-weighted, cached samples may repeat. Controller timestamp is server challenge issuance, not XR capture. Old logs cannot separate solve time, one-way network time or serial execution latency. Feedback goal error compares reported goal and encoder position, not optical EEF ground truth."
+  }
+}
