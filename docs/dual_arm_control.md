@@ -1,6 +1,6 @@
 # Dual-arm Quest hardware control
 
-The hardware supervisor now supports automatic sequence startup with `side: "both"`. The supplied [`launch_dual.json`](../webxr_teleop/hardware/launch_dual.json) selects both arms, the sequence and the measured-feedback MuJoCo twin, with the existing sensitivity and bounded motion settings. It references the hardware profile separately, just like `launch_left.json`.
+The hardware supervisor now supports automatic sequence startup with `side: "both"`. The supplied [`launch.json`](../webxr_teleop/hardware/launch.json) defaults to both arms and automatic sequence startup, with the existing sensitivity and bounded motion settings. The same preset supports `--side left`, `--side right`, or `--side both` and references `rig.json` separately. The measured-feedback MuJoCo twin opens only with explicit `--twin`.
 
 ## Control behavior
 
@@ -20,7 +20,7 @@ The supervisor now samples time after feedback collection and again after the co
 
 ## Existing rig commissioning status
 
-The user reported the mounting geometry on **2026-10-27**: base centers **0.815 m apart**, shoulder to shoulder on the same horizontal line and height, both facing forward. In the shared world frame (+X right, +Y forward, +Z up), the horizontal origin is midway between the centers. `rig.json` places the left base at **[-0.4075, 0, 0.02] m** and the right at **[0.4075, 0, 0.02] m**, with identical +90° Z base orientations so robot-local +X forward points along world +Y. The existing model base Z=0.02 m above the table is retained; no new absolute mounting height was supplied.
+The user reported the mounting geometry on **2026-10-27**: base centers **0.64 m apart**, shoulder to shoulder on the same horizontal line and height, both facing forward. In the shared world frame (+X right, +Y forward, +Z up), the horizontal origin is midway between the centers. `rig.json` places the left base at **[-0.32, 0, 0.02] m** and the right at **[0.32, 0, 0.02] m**, with identical +90° Z base orientations so robot-local +X forward points along world +Y. The existing model base Z=0.02 m above the table is retained; no new absolute mounting height was supplied.
 
 The hardware planner, measured twin, mirror and recording obtain those transforms from the profile. The default mock profile and standalone dual MuJoCo scene use the same spacing. The dual twin starts from a rear viewpoint so both forward-facing arms appear shoulder to shoulder. Historical diagnostic candidates and archived session geometry are preserved.
 

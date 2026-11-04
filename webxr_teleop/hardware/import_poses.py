@@ -39,6 +39,12 @@ def import_sequence(profile, opening, sleep):
                 arm=side+'_follower', calibrated_degrees={name:named[name] for name in JOINTS},
                 sign=arm['sign'][:], offset_deg=arm['offset_deg'][:],
                 gripper_policy='Preserve current opening; source gripper is not commanded')
+            if pose_name=='opening':
+                aperture=named['gripper']/100
+                if not 0<=aperture<=1:raise ValueError(f'{side}: ceremony gripper outside [0, 100]')
+                arm['opening_gripper']=aperture
+                arm['sequence_sources'][pose_name].update(gripper_aperture=aperture,
+                    gripper_policy='Command saved ceremony aperture on recording-session opening/return')
             arm['sequence_authorized'] = False
             arm['sequence_authorization_note'] = ''
             arm['sequence_verified'] = False

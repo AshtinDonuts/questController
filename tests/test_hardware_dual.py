@@ -106,12 +106,13 @@ def test_dual_preflight_rejects_single_arm_display_placement(tmp_path):
     load_profile(path,live=True,sides=('left',),require_motor_watchdog=False)
 
 
-def test_dual_json_keeps_twin_and_independent_hardware_profile():
-    path=Path(__file__).resolve().parents[1]/'webxr_teleop/hardware/launch_dual.json'
+def test_shared_launch_json_keeps_independent_hardware_profile():
+    path=Path(__file__).resolve().parents[1]/'webxr_teleop/hardware/launch.json'
     config=json.loads(path.read_text())
-    assert config['side']=='both' and config['sequence'] is True and config['twin'] is True
+    assert config['side']=='both' and config['sequence'] is True
+    assert 'twin' not in config
     assert (path.parent/config['profile']).is_file()
-    assert config['teleop_joint_speed']==18. and config['teleop_joint_acceleration']==60.
+    assert config['teleop_joint_speed']==13. and config['teleop_joint_acceleration']==40.
 
 
 def test_dual_feedback_arriving_after_loop_start_is_not_falsely_stale(tmp_path):

@@ -1,7 +1,10 @@
 """Quest/Mink hardware supervisor; motor I/O and IK are separate processes."""
 import argparse
+from collections import OrderedDict
 from datetime import datetime
+import hashlib
 import json
+import math
 import multiprocessing as mp
 import os
 from pathlib import Path
@@ -13,6 +16,7 @@ import sys
 import termios
 import time
 import tty
+import uuid
 
 from .core import SIDES, PERIOD, TTL, FEEDBACK_TTL, load_profile, validate_sequence, SettlingWindow, teleop_scales
 from .ipc import pair, send, receive
@@ -20,6 +24,7 @@ from .endpoint import bind_control
 from .motion import motion_settings, expired_planner_sources, matching_grip_sides
 from .recovery import RestartWindow
 from .gripper import gripper_speed, gripper_acceleration
+from .recording_status import recording_status
 
 ROOT=Path(__file__).resolve().parents[2]
 DEFAULT_PROFILE=Path(__file__).with_name('example_profile.json')
@@ -27,7 +32,7 @@ DEFAULT_SOCKET=f'/tmp/quest-aloha-{os.getuid()}/control.sock'
 SUPERVISOR_PERIOD=.010  # Latest-target handoff at 100 Hz; motor worker remains 50 Hz.
 
 
-def spawn_worker(profile, side, mode, python, startup=False, manual_start=False, sequence=False, motion=None, gripper_speed_limit=None, gripper_acceleration_limit=None):
+def spawn_worker(profile, side, mode, python, startup=False, manual_start=False, sequence=False, motion=None, gripper_speed_limit=None, gripper_acceleration_limit=None, record_actions=False):
     parent,child=pair()
     # Conda/ROS activation can export another interpreter's compiled packages.
     # The worker resolves packages from its own environment and this repo cwd.
@@ -36,7 +41,7 @@ def spawn_worker(profile, side, mode, python, startup=False, manual_start=False,
         worker_env.pop(name,None)
     worker_env['PYTHONNOUSERSITE']='1'
     proc=subprocess.Popen([python,'-m','webxr_teleop.hardware.worker','--profile',str(profile),
-        '--side',side,'--mode',mode,'--fd',str(child.fileno()),'--parent-pid',str(os.getpid())]+(['--startup'] if startup else [])+(['--manual-start'] if manual_start else [])+(['--sequence'] if sequence else [])+(['--teleop-joint-speed',str(motion[0]),'--teleop-joint-acceleration',str(motion[1])] if motion else [])+(['--gripper-speed',str(gripper_speed_limit)] if gripper_speed_limit is not None else [])+(['--gripper-acceleration',str(gripper_acceleration_limit)] if gripper_acceleration_limit is not None else []),pass_fds=[child.fileno()],
+        '--side',side,'--mode',mode,'--fd',str(child.fileno()),'--parent-pid',str(os.getpid())]+(['--record-actions'] if record_actions else [])+(['--startup'] if startup else [])+(['--manual-start'] if manual_start else [])+(['--sequence'] if sequence else [])+(['--teleop-joint-speed',str(motion[0]),'--teleop-joint-acceleration',str(motion[1])] if motion else [])+(['--gripper-speed',str(gripper_speed_limit)] if gripper_speed_limit is not None else [])+(['--gripper-acceleration',str(gripper_acceleration_limit)] if gripper_acceleration_limit is not None else []),pass_fds=[child.fileno()],
         cwd=ROOT,start_new_session=True,env=worker_env)
     child.close()
     return parent,proc
@@ -52,9 +57,13 @@ def hand_dict(hand):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('action',nargs='?',choices=('run','status','stop','reset','sleep','restart'),default='run')
+    ap.add_argument('action',nargs='?',choices=('run','status','stop','reset','sleep','restart','record-start','record-save','record-discard','record-next'),default='run')
+    ap.add_argument('--recording-config',type=Path,help='Opt-in native HDF5 recording configuration; requires --sequence')
+    ap.add_argument('--recording-python',default='/home/King/miniconda3/envs/lerobot/bin/python')
+    ap.add_argument('--request-id',help='Idempotency key for a local recording command')
+    ap.add_argument('--outcome',choices=('unknown','success','failure'),default='unknown')
     ap.add_argument('--config',type=Path,help='JSON launch settings; explicit CLI options override the file')
-    ap.add_argument('--twin',action=argparse.BooleanOptionalAction,default=None,help='Measured-feedback MuJoCo window (default on in live mode)')
+    ap.add_argument('--twin',action=argparse.BooleanOptionalAction,default=False,help='Enable measured-feedback MuJoCo window for this launch (CLI only; JSON cannot enable it)')
     ap.add_argument('--sequence',action='store_true',help='Opening pose, ready hold, Quest control, and hold Y for sleep; requires explicit named poses')
     ap.add_argument('--side',choices=('left','right','both'),default='both')
     ap.add_argument('--manual-start',action='store_true',help='Single-arm five-second torque-off positioning, then software-watchdog powered hold')
@@ -66,6 +75,8 @@ def main():
     ap.add_argument('--teleop-joint-acceleration',type=float,help='Teleop joint acceleration limit in degrees/s² (profile default 60)')
     ap.add_argument('--translation-scale','--scale',type=float,default=None,help='Robot metres per controller metre; overrides profile (default 1)')
     ap.add_argument('--rotation-scale',type=float,default=None,help='Robot angle per controller angle; overrides profile (default 1)')
+    ap.add_argument('--tracking-position-deadband-m',type=float,default=None,help='Ignore controller position motion within this radius in metres (default 0.002; zero disables)')
+    ap.add_argument('--tracking-rotation-deadband-deg',type=float,default=None,help='Ignore controller rotation motion within this angle in degrees (default 1; zero disables)')
     ap.add_argument('--profile',type=Path,default=DEFAULT_PROFILE)
     ap.add_argument('--lerobot-python',default='/home/King/miniconda3/envs/lerobot/bin/python')
     ap.add_argument('--socket',default=DEFAULT_SOCKET)
@@ -77,12 +88,20 @@ def main():
     args=ap.parse_args(configured_argv(ap,sys.argv[1:]))
     if args.action!='run':
         client=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); client.settimeout(2)
-        client.connect(args.socket); client.sendall((args.action+'\n').encode())
+        command=(json.dumps(dict(action=args.action,request_id=args.request_id or uuid.uuid4().hex,outcome=args.outcome))
+                 if args.action.startswith('record-') else args.action)
+        client.connect(args.socket); client.sendall((command+'\n').encode())
         print(client.recv(65536).decode()); client.close(); return
     if args.demo and args.mode!='mock':
         ap.error('--demo is restricted to mock motors')
     if args.seconds<0:
         ap.error('--seconds must be nonnegative')
+    recording_config=None
+    if args.recording_config:
+        if not args.sequence or args.mode=='observe':ap.error('Dataset recording requires --sequence in mock/live mode')
+        from ..datasets.config import load_config
+        try:recording_config=load_config(args.recording_config,mock=args.mode=='mock')
+        except (ValueError,OSError) as exc:ap.error(str(exc))
     if args.sequence and args.manual_start:
         ap.error('--sequence now starts automatically; omit --manual-start')
     if args.manual_start or args.sequence:args.startup=True
@@ -91,6 +110,7 @@ def main():
     if args.manual_start and args.side=='both':
         ap.error('--manual-start requires --side left/right; use --sequence for automatic dual-arm startup')
     sides=SIDES if args.side=='both' else (args.side,)
+    alignment_side=sides[0] if len(sides)==1 else 'right'
     profile=load_profile(args.profile,live=args.mode=='live',sides=sides,require_motor_watchdog=not (args.manual_start or args.sequence))
     if args.gripper_speed is not None:profile['gripper_speed']=args.gripper_speed
     if args.gripper_acceleration is not None:profile['gripper_acceleration']=args.gripper_acceleration
@@ -99,7 +119,7 @@ def main():
         profile['gripper_acceleration']=gripper_acceleration(profile)
     except ValueError as exc:ap.error(str(exc))
     print(f"Gripper speed: {profile['gripper_speed']:g} aperture/s; acceleration: {profile['gripper_acceleration']:g} aperture/s²",flush=True)
-    for key in ('translation_scale','rotation_scale'):
+    for key in ('translation_scale','rotation_scale','tracking_position_deadband_m','tracking_rotation_deadband_deg'):
         if getattr(args,key) is not None:profile[key]=getattr(args,key)
     for arg,key in [('teleop_joint_speed','teleop_joint_speed_deg_s'),('teleop_joint_acceleration','teleop_joint_acceleration_deg_s2')]:
         if getattr(args,arg) is not None:profile[key]=getattr(args,arg)
@@ -110,9 +130,16 @@ def main():
     try:translation_scale,rotation_scale=teleop_scales(profile)
     except ValueError as exc:ap.error(str(exc))
     print(f'Teleop sensitivity: translation {translation_scale:g}x, rotation {rotation_scale:g}x',flush=True)
+    from .tracking import tracking_deadbands
+    try:position_deadband,rotation_deadband=tracking_deadbands(profile)
+    except ValueError as exc:ap.error(str(exc))
+    profile.update(tracking_position_deadband_m=position_deadband,tracking_rotation_deadband_deg=math.degrees(rotation_deadband))
+    print(f'Tracking deadband: {position_deadband*1000:g} mm, {math.degrees(rotation_deadband):g} degrees (controller space)',flush=True)
     if args.sequence:
         if args.mode=='observe': ap.error('--sequence requires mock/live mode')
         validate_sequence(profile,sides,live=args.mode=='live')
+        if recording_config and any('opening_gripper' not in profile['arms'][side] for side in sides):
+            ap.error('Recording sequence requires opening_gripper for every selected arm')
     from . import planner, render
     from ..server import VRServer
     if args.manual_start and args.mode=='live':
@@ -132,23 +159,44 @@ def main():
     opening_pending=args.sequence
     feedback={}; measured={s:profile['arms'][s]['initial_rad']+[profile['arms'][s]['initial_gripper']] for s in sides}
     align_requested=False
+    planner_ready_at=None
     aligned=False; generation=None; buttons={}; y_since=None; home_id=0; planner_pending=False
     last_result=None; home_release_required=False; fault=False; worker_armed=False; reset_at=None
     output=args.output or ROOT/'teleop_sessions'/datetime.now().strftime('hardware_%Y%m%d_%H%M%S_%f')
     output=output.resolve(); output.mkdir(parents=True,exist_ok=False)
     log=(output/'hardware.jsonl').open('w')
     twin_sock=None; twin_proc=None
+    recorder=None; recording_failed=False; episode_prepared=False; episode_return=False
+    release_pending=False; release_started=None
+    exit_requested=False; exit_attempted=False; exit_started=None
+    last_progress=0.;last_progress_phase=None
+    record_last_result=''
+    record_commands=[]; record_request_cache=OrderedDict()
+    from .keyboard import TerminalKeys
+    terminal_keys=TerminalKeys()
     endpoint_lock=None
     socket_bound=False; stop_this_tick=False; home_button_ready=True
+    def progress_status():
+        return recording_status(recording_config,
+            dict(recorder.status,phase=recorder.phase,error=recorder.error),
+            state=state,reason=reason,now_ns=time.monotonic_ns(),aligned=aligned,
+            prepared=episode_prepared,returning=episode_return,release_pending=release_pending,
+            exiting=exit_requested,fault=fault,result=record_last_result,alignment_hand=alignment_side)
+    def request_exit():
+        nonlocal stopping,exit_requested
+        if recording_config and not exit_requested:exit_requested=True
+        else:stopping=True
     def handle_signal(*_):
-        nonlocal stopping
-        stopping=True
+        request_exit()
     signal.signal(signal.SIGINT,handle_signal); signal.signal(signal.SIGTERM,handle_signal)
     def event(kind, **kwargs):
         log.write(json.dumps(dict(t=time.monotonic(),event=kind) | kwargs,allow_nan=False)+'\n'); log.flush()
-    def hold(why, is_fault=False, recoverable=False):
+        if recorder and kind!='tick':recorder.sample('event',event=kind,t_ns=time.monotonic_ns(),details=kwargs)
+    def hold(why, is_fault=False, recoverable=False, abort_recording=True):
         nonlocal state,reason,epoch,aligned,y_since,last_result,home_release_required,fault,worker_armed,stop_this_tick,align_requested
-        nonlocal restart_blocked,restart_active
+        nonlocal restart_blocked,restart_active,release_pending
+        release_pending=False
+        if recorder and abort_recording:recorder.abort(why)
         if is_fault and not recoverable:restart_blocked=True
         restart_active=False
         stop_this_tick=True; align_requested=False
@@ -162,6 +210,7 @@ def main():
         nonlocal state,reason,epoch,aligned,home_release_required,last_result,worker_armed,reset_at,align_requested
         if fault:
             return 'Reset rejected: fault latched; K restarts recoverable IK/hold-drift/gripper-range faults'
+        if recording_failed:return 'Reset rejected: recorder failed; resolve recording error and start a new session'
         if args.sequence and (parked or not opening_completed or state in ('OPENING','PARKING','PARKED')):
             if parked: return 'Reset rejected: sleep completed; start a new session'
             if state=='HOLD': return 'Reset rejected: opening interrupted; press K to return to the opening pose'
@@ -169,26 +218,27 @@ def main():
         if stop_this_tick:return 'Handover rejected: stop has priority; release controls and retry'
         if args.mode=='observe':return 'Handover rejected: observe mode cannot control motors'
         if not fresh:return 'Handover rejected: motor feedback is stale or unavailable'
-        missing=[s for s in SIDES if not hands[s] or not 0<=now-hands[s]['t']<=TTL]
+        missing=[s for s in sides if not hands[s] or not 0<=now-hands[s]['t']<=TTL]
         if missing:return 'Handover rejected: controller tracking missing/stale: '+', '.join(missing)
-        gripping=[s for s in SIDES if hands[s]['grip']]
+        gripping=[s for s in sides if hands[s]['grip']]
         if gripping:return 'Handover rejected: release side grips: '+', '.join(gripping)
-        if hands['right']['buttons'].get('b'):return 'Handover rejected: release right B stop'
+        if hands['right'] and hands['right']['buttons'].get('b'):return 'Handover rejected: release right B stop'
         align_requested=False
-        epoch+=1; state='ARMED'; reason='Press left X to align'; aligned=False
+        epoch+=1; state='ARMED'; reason='Press Quest left X or terminal X to align'; aligned=False
         home_release_required=False; last_result=None; worker_armed=True; reset_at=now
         for sock,_ in workers.values():
             send(sock,dict(op='arm',epoch=epoch,issued=now))
         event('reset',epoch=epoch)
-        return 'Armed in hold; press left X to align'
+        return 'Armed in hold; press Quest left X or terminal X to align'
     def start_sleep(now, source):
         nonlocal state,reason,epoch,aligned,align_requested,last_result,worker_armed,reset_at
         nonlocal home_id,y_since,home_button_ready,parking_requires_tracking,opening_pending
         if not args.sequence:return 'Sleep rejected: requires --sequence'
         if fault:return 'Sleep rejected: hardware/planner fault latched; resolve and restart'
         if stop_this_tick:return 'Sleep rejected: stop has priority; retry after release'
-        if state not in ('OPENING','READY','HOLD','ARMED'):return 'Sleep rejected: sleep already active or session not ready'
+        if state not in ('OPENING','READY','HOLD','ARMED','RELEASING'):return 'Sleep rejected: sleep already active or session not ready'
         if not fresh:return 'Sleep rejected: motor feedback is stale or unavailable'
+        if recorder:recorder.abort('Sleep requested')
         epoch+=1;home_id+=1;state='PARKING';aligned=False;align_requested=False
         last_result=None;worker_armed=True;reset_at=now;y_since=None;home_button_ready=False
         opening_pending=False;parking_requires_tracking=False
@@ -198,8 +248,9 @@ def main():
     def restart(now):
         nonlocal state,reason,epoch,aligned,align_requested,last_result,worker_armed,reset_at,fault
         nonlocal opening_pending,opening_completed,opening_started,restart_active,restart_preparing_at
-        nonlocal planner_sock,planner_proc,planner_pending,home_release_required
+        nonlocal planner_sock,planner_proc,planner_pending,home_release_required,episode_return,episode_prepared
         if not args.sequence:return 'Restart rejected: requires sequence mode and configured opening pose'
+        if recording_failed:return 'Restart rejected: dataset recorder failed; resolve the error and start a new session'
         if stop_this_tick:return 'Restart rejected: stop has priority; release stop and retry K'
         if args.mode=='observe' or parked or state in ('PARKING','DISABLING','PARKED'):
             return 'Restart rejected: sleep/torque-off or observe mode; start a new session'
@@ -213,6 +264,8 @@ def main():
             return 'Restart rejected: gripper encoder still outside calibration; wait for valid feedback'
         if not all(restart_windows[s].ready for s in sides):
             return 'Restart rejected: wait for 0.3 seconds of stationary encoder feedback (hold-target agreement is not required)'
+        if recorder:recorder.abort('Explicit restart requested')
+        episode_return=False;episode_prepared=False
         # Quiesce only the compute process; motor workers keep their powered holds.
         old_sock,old_proc=planner_sock,planner_proc
         old_sock.close()
@@ -230,6 +283,53 @@ def main():
         for sock,_ in workers.values():send(sock,dict(op='hold',reason='Explicit keyboard restart preparation'))
         event('restart_requested',epoch=epoch,target='opening_rad')
         return 'Preparing restart to opening pose; Quest motion ignored'
+    def recording_command(command, now, outcome='unknown'):
+        nonlocal episode_prepared,episode_return,epoch,state,reason,aligned,align_requested
+        nonlocal last_result,worker_armed,reset_at,opening_completed,opening_pending
+        nonlocal restart_active,restart_preparing_at,home_release_required,release_pending
+        if recorder is None:return 'Recording is not enabled'
+        if recording_failed or recorder.error:return 'Recording rejected: '+str(recorder.error)
+        if stop_this_tick or fault or stopping or exit_requested:return 'Recording rejected: stop/fault/exit has priority'
+        if command=='record-toggle':
+            command=('record-save' if recorder.phase=='recording' else
+                     'record-next' if recorder.phase=='finished' and not episode_prepared else 'record-start')
+        if command in ('record-save','record-discard'):
+            if recorder.phase!='recording':return 'Recording rejected: no active episode'
+            recorder.request('finish',status='saved' if command=='record-save' else 'discarded',
+                             end_ns=time.monotonic_ns(),outcome=outcome)
+            hold('Episode ended; powered hold',abort_recording=False)
+            release_pending=True
+            return 'Finalizing episode; opening grippers fully at end pose'
+        if recorder.phase not in ('idle','finished'):return 'Recording rejected: wait for recorder readiness/finalization'
+        if release_pending or state=='RELEASING':return 'Recording rejected: wait for grippers to open fully'
+        if recording_config['num_episodes'] and recorder.status.get('saved',0)>=recording_config['num_episodes']:
+            return 'Recording complete: saved episode target reached; arms remain in powered hold'
+        if not fresh or not tracking:return 'Recording rejected: fresh motors and selected-arm controllers required'
+        if any(hands[s]['grip'] for s in sides):return 'Recording rejected: release selected side grips'
+        if state not in ('READY','HOLD','ARMED'):return 'Recording rejected: robot is not ready'
+        if not all(restart_windows[s].ready for s in sides):return 'Recording rejected: wait for stationary encoder feedback'
+        if command=='record-next':
+            if any(not feedback[s]['health'].get('torque') or feedback[s]['health'].get('errors') for s in sides):
+                return 'Recording rejected: healthy powered feedback required'
+            # Plan/check the entire path while workers retain their existing holds.
+            # This path never clears fault latches or cycles motor torque.
+            epoch+=1;state='RESTART_PREPARING';episode_return=True;restart_active=True
+            restart_preparing_at=now;episode_prepared=False;opening_completed=False;opening_pending=False
+            aligned=False;align_requested=False;last_result=None;worker_armed=False;home_release_required=True
+            for sock,_ in workers.values():send(sock,dict(op='hold',reason='Episode return preparation'))
+            event('episode_return_requested',epoch=epoch)
+            return 'Preparing return to opening and ceremony gripper aperture'
+        if command!='record-start':return 'Unknown recording command'
+        if any(not c.get('healthy') for c in recorder.status.get('cameras',{}).values()):
+            return 'Recording rejected: wait for fresh camera streams'
+        if not aligned or state!='ARMED':return 'Recording rejected: release grips and press X to align, then Right to start'
+        # Capture does not grant motion authority or require a particular pose.
+        # An already aligned, stationary teleop session can record in place;
+        # returning to opening remains an explicit operator action.
+        recorder.request('start',start_ns=time.monotonic_ns())
+        episode_prepared=False
+        event('episode_start_requested')
+        return 'Preparing episode file; wait for REC'
     try:
         command_server,endpoint_lock=bind_control(args.socket)
         socket_bound=True
@@ -240,13 +340,40 @@ def main():
                 try:probe.bind(('0.0.0.0',args.port))
                 except OSError as exc:
                     raise RuntimeError(f'Quest HTTPS port {args.port} is unavailable; close its existing server before relaunching') from exc
+        if recording_config:
+            from ..datasets.client import RecorderClient
+            calibrations={}
+            for side in sides:
+                calibration=Path(profile['arms'][side].get('calibration',''))
+                if calibration.is_file():
+                    contents=calibration.read_bytes()
+                    calibrations[side]=dict(sha256=hashlib.sha256(contents).hexdigest(),data=json.loads(contents))
+            revision=subprocess.run(['git','rev-parse','HEAD'],cwd=ROOT,capture_output=True,text=True).stdout.strip()
+            source_hashes={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+                           for p in (ROOT/'webxr_teleop').rglob('*.py')}
+            metadata_path=output/'dataset_metadata.json'
+            metadata_path.write_text(json.dumps(dict(mode=args.mode,sides=sides,profile=profile,
+                calibrations=calibrations,revision=revision,source_sha256=source_hashes),indent=2)+'\n')
+            recorder=RecorderClient(args.recording_config.resolve(),metadata_path,args.recording_python,recording_config['heartbeat_timeout_s'])
+            deadline=time.monotonic()+10
+            while recorder.phase=='warming':
+                recorder.poll()
+                if time.monotonic()-last_progress>=.2:
+                    warmup=recording_status(recording_config,dict(recorder.status,phase='warming'),
+                        state='WARMING',reason='Initializing configured cameras; motors not started',now_ns=time.monotonic_ns())
+                    recorder.sample('status',value=warmup)
+                    if server:server.publish(dict(warmup,type='status',hardware=True,record=True))
+                    last_progress=time.monotonic()
+                if recorder.error:raise RuntimeError(recorder.error)
+                if time.monotonic()>deadline:raise RuntimeError('Recording camera warmup timed out')
+                time.sleep(.01)
         for s in sides:
             workers[s]=spawn_worker(args.profile.resolve(),s,args.mode,
-                sys.executable if args.mode=='mock' else args.lerobot_python,startup=args.startup,manual_start=args.manual_start,sequence=args.sequence,motion=motion,gripper_speed_limit=profile['gripper_speed'],gripper_acceleration_limit=profile['gripper_acceleration'])
+                sys.executable if args.mode=='mock' else args.lerobot_python,startup=args.startup,manual_start=args.manual_start,sequence=args.sequence,motion=motion,gripper_speed_limit=profile['gripper_speed'],gripper_acceleration_limit=profile['gripper_acceleration'],record_actions=recorder is not None)
         planner_sock,child=pair(); planner_proc=ctx.Process(target=planner.run,args=(child,profile,sides)); planner_proc.start(); child.close()
         video_sock,child=pair(); video_proc=ctx.Process(target=render.run,args=(child,profile,str(output/'video'),args.mode,sides)); video_proc.start(); child.close()
         processes=[(planner_sock,planner_proc),(video_sock,video_proc)]
-        if args.twin if args.twin is not None else args.mode=='live':
+        if args.twin:
             from . import twin
             twin_sock,child=pair();twin_proc=ctx.Process(target=twin.run,args=(child,profile,sides))
             twin_proc.start();child.close();processes.append((twin_sock,twin_proc))
@@ -258,6 +385,7 @@ def main():
             old_terminal=termios.tcgetattr(sys.stdin); tty.setcbreak(sys.stdin.fileno())
         if args.sequence: print('Sequence: opening → READY; left X hands over + aligns; grip moves, trigger grips; hold left Y 1 s or terminal S → sleep (also from HOLD); K restarts to opening pose; B stops.',flush=True)
         if not args.sequence: print('Space: powered stop. R: reset. Quest X: align. Hold Y 1 s: home. B: stop.',flush=True)
+        if recorder:print('Dataset: Right arrow starts/saves; Left arrow discards; Up arrow returns to opening; Escape sleeps then exits. Quest A advances; B stops; X aligns.',flush=True)
         print('MP4:',output/'video/session.mp4',flush=True)
         event('startup',mode=args.mode,profile=profile,sides=sides,enable_torque=args.startup,manual_start=args.manual_start,sequence=args.sequence,watchdog_policy='software_hold' if args.manual_start or args.sequence else 'motor_and_software')
         start=time.monotonic(); next_tick=start; demo_reset=False; demo_start=None
@@ -266,12 +394,21 @@ def main():
         settled={s:False for s in sides}; settled_seq={s:None for s in sides}
         while not stopping:
             stop_this_tick=False
+            record_commands=[]
             now=time.monotonic(); elapsed=now-start
-            if args.seconds and elapsed>=args.seconds:
-                break
+            if args.seconds and elapsed>=args.seconds and not exit_requested:
+                if recording_config:request_exit()
+                else:break
+            if recorder:
+                recorder.poll()
+                if recorder.status.get('rejected') and recorder.pending is None and recorder.phase in ('idle','finished'):
+                    episode_prepared=True
+                if recorder.error and not recording_failed:
+                    recording_failed=True;hold('Dataset recorder: '+recorder.error)
             for s,(sock,proc) in workers.items():
                 for msg in receive(sock):
                     if msg['type']=='feedback':
+                        if recorder:recorder.sample('robot',side=s,value=msg)
                         feedback[s]=msg; measured[s]=msg['q']; feedback[s]['available']=True
                     elif msg['type']=='motion_profile':
                         event('motion_profile',side=s,details=msg['details'])
@@ -338,10 +475,13 @@ def main():
             # A snapshot can likewise contain a challenge issued during this
             # iteration. Never classify that fresh input against an older now.
             now=time.monotonic();elapsed=now-start
-            tracking=all(hands[s] is not None and 0<=now-hands[s]['t']<=TTL for s in SIDES)
+            tracking=all(hands[s] is not None and 0<=now-hands[s]['t']<=TTL for s in sides)
+            if recorder:recorder.sample('controllers',hands=hands)
             if opening_pending and (stop_this_tick or state in ('HOLD','FAULT')):
                 opening_pending=False
-            if opening_pending and fresh and stationary and all(feedback[s].get('hold_command_confirmed') for s in sides):
+            if (opening_pending and fresh and stationary and planner_ready_at is not None
+                    and 0<=now-planner_ready_at<=TTL
+                    and all(feedback[s].get('hold_command_confirmed') for s in sides)):
                 opening_pending=False; opening_started=now; epoch+=1; state='OPENING'; home_id+=1
                 worker_armed=True; reset_at=now; last_result=None
                 reason='Slow opening ceremony; Quest motion ignored'
@@ -355,33 +495,44 @@ def main():
                 # before startup feedback or an explicit reset exists.
                 if (args.sequence and (state=='ARMED' or (state=='PARKING' and parking_requires_tracking))) or (not args.sequence and (state!='DISARMED' or feedback)):
                     hold('Quest reference/connection changed')
-            if state in ('ARMED','HOMING','OPENING','PARKING') and (not fresh or (state!='OPENING' and not (state=='PARKING' and not parking_requires_tracking) and not tracking)):
+            if state in ('ARMED','HOMING','OPENING','PARKING','RELEASING') and (not fresh or (state not in ('OPENING','RELEASING') and not (state=='PARKING' and not parking_requires_tracking) and not tracking)):
                 if not fresh:
                     hold('Feedback watchdog expired')
                 else:
                     missing=[f'{s} missing' if hands[s] is None else f'{s} age {(now-hands[s]["t"])*1000:.0f} ms'
-                             for s in SIDES if hands[s] is None or not 0<=now-hands[s]['t']<=TTL]
+                             for s in sides if hands[s] is None or not 0<=now-hands[s]['t']<=TTL]
                     hold('Controller tracking lost: '+', '.join(missing))
-            if state in ('ARMED','HOMING','OPENING','PARKING') and reset_at is not None and now-reset_at>TTL and any(feedback.get(s,{}).get('epoch')!=epoch for s in sides):
+            if state in ('ARMED','HOMING','OPENING','PARKING','RELEASING') and reset_at is not None and now-reset_at>TTL and any(feedback.get(s,{}).get('epoch')!=epoch for s in sides):
                 hold('Motor reset acknowledgement expired')
-            if state in ('ARMED','HOMING','OPENING','PARKING') and any(feedback.get(s,{}).get('state')=='HOLD' and feedback[s]['t']>now-.1 for s in sides):
+            if state in ('ARMED','HOMING','OPENING','PARKING','RELEASING') and any(feedback.get(s,{}).get('state')=='HOLD' and feedback[s]['t']>now-.1 for s in sides):
                 # Allow reset message one worker cycle to arrive; epoch is checked below via ack.
                 if all(feedback.get(s,{}).get('epoch')==epoch for s in sides):
                     causes='; '.join(s+': '+feedback[s].get('reason','unknown') for s in sides if feedback[s].get('state')=='HOLD')
                     hold('Motor hold: '+causes)
             current={b:bool(hands[s] and hands[s]['buttons'].get(k)) for b,s,k in
-                [('x','left','x'),('y','left','y'),('b','right','b')]}
+                [('x','left','x'),('y','left','y'),('b','right','b'),('a','right','a')]}
+            if recorder and current['a'] and not buttons.get('a'):record_commands.append(('record-toggle','unknown'))
             if not current['y']: home_button_ready=True
             if current['b']:
                 hold('Quest B stop')
-            do_reset=False; do_sleep=False; do_restart=False
+            do_reset=False; do_sleep=False; do_restart=False; do_align=False
+            keyboard_data=b''
             if old_terminal is not None and select.select([sys.stdin],[],[],0)[0]:
-                key=os.read(sys.stdin.fileno(),1)
+                keyboard_data=os.read(sys.stdin.fileno(),64)
+            for key in terminal_keys.feed(keyboard_data,time.monotonic()):
                 if key==b' ': hold('PC Space stop')
                 elif key.lower()==b'r': do_reset=True
+                elif key.lower()==b'x': do_align=True
                 elif key.lower()==b's': do_sleep=True
                 elif key.lower()==b'k': do_restart=True
-                elif key in (b'q',b'\x03'): stopping=True; hold('PC shutdown')
+                elif key==b'right' and recorder:
+                    if recorder.phase=='recording':record_commands.append(('record-save','unknown'))
+                    else:record_commands.append(('record-start','unknown'))
+                elif key==b'up' and recorder:record_commands.append(('record-next','unknown'))
+                elif key==b'left' and recorder:record_commands.append(('record-discard','unknown'))
+                elif key in (b'q',b'\x03',b'escape'):
+                    request_exit()
+                    if stopping:hold('PC shutdown')
             try:
                 client,_=command_server.accept()
             except BlockingIOError:
@@ -390,7 +541,7 @@ def main():
                 client.setblocking(False); clients.append((client,now))
             for client,accepted in clients[:]:
                 try:
-                    raw=client.recv(64)
+                    raw=client.recv(4096)
                 except BlockingIOError:
                     if now-accepted<.2:
                         continue
@@ -398,12 +549,26 @@ def main():
                 except ConnectionError:
                     raw=b''
                 command=raw.decode(errors='replace').strip()
+                request_id=None;outcome='unknown';cached=False
+                if command.startswith('{'):
+                    try:
+                        request=json.loads(command);command=request['action'];request_id=request['request_id'];outcome=request.get('outcome','unknown')
+                        if not isinstance(command,str) or not isinstance(request_id,str) or not 1<=len(request_id)<=128 or outcome not in ('unknown','success','failure'):raise ValueError()
+                        cached=request_id in record_request_cache
+                    except (ValueError,KeyError,TypeError):command='invalid'
                 if command=='stop': hold('Local stop command')
                 elif command=='reset': reason=reset(now,hands,fresh)
                 elif command=='sleep': reason=start_sleep(now,'local')
                 elif command=='restart': reason=restart(now)
+                elif command.startswith('record-') and not cached:
+                    record_commands.append((command,outcome))
+                    if request_id:
+                        record_request_cache[request_id]=True
                 try:
-                    client.send(json.dumps(dict(state=state,reason=reason,feedback=feedback,processes=dict(planner=planner_proc.pid,renderer=video_proc.pid,motors={s:p.pid for s,(_,p) in workers.items()}))).encode())
+                    client.send(json.dumps(dict(state=state,reason=reason,feedback=feedback,request_id=request_id,
+                        recording=dict(recorder.status,phase=recorder.phase,error=recorder.error,result=record_last_result) if recorder else None,
+                        progress=progress_status() if recorder else None,
+                        processes=dict(planner=planner_proc.pid,renderer=video_proc.pid,recorder=recorder.process.pid if recorder else None,motors={s:p.pid for s,(_,p) in workers.items()}))).encode())
                 except (BlockingIOError,ConnectionError):
                     pass
                 client.close(); clients.remove((client,accepted))
@@ -413,21 +578,42 @@ def main():
                 reason=reset(now,hands,fresh); print(reason,flush=True)
             if do_sleep:
                 reason=start_sleep(now,'local'); print(reason,flush=True)
-            if do_restart:
+            if do_restart and not exit_requested:
                 reason=restart(now);print(reason,flush=True)
+            if release_pending and not exit_requested and not stop_this_tick and fresh and not fault:
+                if all(feedback[s].get('hold_command_confirmed') and
+                       feedback[s].get('reason')=='Episode ended; powered hold' for s in sides):
+                    release_pending=False; release_started=now
+                    epoch+=1;state='RELEASING';worker_armed=True;reset_at=now
+                    reason='Episode ended; opening grippers fully; arm joints held'
+                    for sock,_ in workers.values():send(sock,dict(op='arm',epoch=epoch,issued=now))
+            if state=='RELEASING' and now-release_started>15:
+                hold('Episode-end release settling timed out; expected open grippers and stationary arms',True)
+            if exit_requested:
+                if not exit_attempted:
+                    exit_attempted=True;exit_started=now;release_pending=False
+                    if state not in ('PARKING','DISABLING','PARKED'):
+                        reason=start_sleep(now,'recording_exit')
+                        print(reason,flush=True)
+                        if state!='PARKING':stopping=True
+                elif state=='PARKED':stopping=True
+                elif state not in ('PARKING','DISABLING') or now-exit_started>120:
+                    hold('Recording exit sleep interrupted; retaining powered hold')
+                    stopping=True
             if state=='OPENING' and not restart_active and opening_started is not None and now-opening_started>=10.:
                 # Discard queued trajectory results via a new epoch; workers capture
                 # current feedback once. Explicit reset/alignment still owns teleop.
                 hold('Opening 10-second limit reached; holding current pose; release both grips and press left X')
                 opening_completed=True; state='READY'
+                episode_prepared=False
                 event('opening_time_limit',duration=now-opening_started,target_reached=False)
             if (state=='HOLD' and args.sequence and opening_completed and not fault
                     and reason.startswith('Controller tracking')):
-                reason=('Controller tracking restored; release both grips and press left X to re-arm'
-                        if tracking else 'Controller tracking lost; waiting for fresh data from both controllers')
+                reason=('Controller tracking restored; release selected grips and press X to re-arm'
+                        if tracking else 'Controller tracking lost; waiting for fresh data from selected-arm controllers')
             # A deliberate new X press can recover a hold after opening. reset()
             # retains tracking, feedback, grip, stop and latched-fault checks.
-            if state in ('READY','HOLD') and args.sequence and current['x'] and not buttons.get('x'):
+            if state in ('READY','HOLD') and args.sequence and (do_align or current['x'] and not buttons.get('x')):
                 reason=reset(now,hands,fresh)
                 if state=='ARMED':align_requested=True
             if args.sequence and state in ('OPENING','READY','HOLD','ARMED'):
@@ -441,7 +627,7 @@ def main():
                 if home_release_required:
                     if tracking and all(not hands[s]['grip'] for s in sides):
                         home_release_required=False
-                elif (align_requested or (current['x'] and not buttons.get('x'))) and tracking and all(not hands[s]['grip'] for s in SIDES):
+                elif (do_align or align_requested or (current['x'] and not buttons.get('x'))) and tracking and all(not hands[s]['grip'] for s in sides):
                     align_requested=True; mode='align'
                 elif aligned:
                     mode='teleop'
@@ -453,8 +639,8 @@ def main():
                         event('sleep_start' if args.sequence else 'home_start',home_id=home_id)
                 elif not args.sequence:
                     y_since=None
-            elif state in ('HOMING','OPENING','PARKING'):
-                mode={'HOMING':'home','OPENING':'opening','PARKING':'sleep'}[state]
+            elif state in ('HOMING','OPENING','PARKING','RELEASING'):
+                mode={'HOMING':'home','OPENING':'opening','PARKING':'sleep','RELEASING':'release'}[state]
             for s,(sock,_) in workers.items():
                 gripping=bool(hands[s] and hands[s]['grip'])
                 if gripping!=previous_grips[s]:grip_generation[s]+=1
@@ -464,6 +650,10 @@ def main():
             buttons=current
             for result in receive(planner_sock):
                 planner_pending=False
+                if (result['type']=='target' and result['epoch']==epoch
+                        and result.get('mode')=='hold' and state=='DISARMED'
+                        and 0<=time.monotonic()-result['input_t']<=TTL):
+                    planner_ready_at=result['input_t']
                 if result['type']=='fault':
                     if result.get('code')=='serialization' and result.get('recoverable') is True:
                         if result.get('epoch')==epoch:hold('Planner reporting error: '+result['reason'])
@@ -474,15 +664,21 @@ def main():
                         hold('Restart preparation feedback/target expired');continue
                     if not all(restart_windows[s].ready for s in sides):
                         hold('Restart cancelled: encoder motion during preparation');continue
+                    if episode_return and not all(feedback[s].get('hold_command_confirmed')
+                            and feedback[s].get('reason')=='Episode return preparation'
+                            and feedback[s]['t']>=restart_preparing_at for s in sides):
+                        # Do not put the new arm request in the same worker
+                        # batch as the preparation hold: stop must keep priority.
+                        continue
                     home_id+=1;state='OPENING';mode='opening';opening_started=now
                     worker_armed=True;reset_at=now
                     reason='Restart: returning to opening pose; Quest motion ignored'
-                    for sock,_ in workers.values():send(sock,dict(op='restart',epoch=epoch,issued=now))
+                    for sock,_ in workers.values():send(sock,dict(op='arm' if episode_return else 'restart',epoch=epoch,issued=now))
                     event('restart_start',home_id=home_id,epoch=epoch)
                 elif result['type']=='expired':
-                    if result.get('epoch')==epoch and result.get('mode')==mode and state in ('ARMED','HOMING','OPENING','PARKING'):
+                    if result.get('epoch')==epoch and result.get('mode')==mode and state in ('ARMED','HOMING','OPENING','PARKING','RELEASING'):
                         hold('Planner deadline expired')
-                elif result['epoch']==epoch and state in ('ARMED','HOMING','OPENING','PARKING'):
+                elif result['epoch']==epoch and state in ('ARMED','HOMING','OPENING','PARKING','RELEASING'):
                     admitted_t=time.monotonic()
                     if not 0<=admitted_t-result['input_t']<=TTL:
                         hold('Expired planner result'); continue
@@ -509,6 +705,10 @@ def main():
                     if result['mode']=='align': aligned=True; align_requested=False; reason='Aligned; side grip moves arm; index trigger controls aperture'
                     if result['mode']=='teleop':
                         reason=('Catching up; holding bounded target until motors follow' if any(d.get('catching_up') for d in result.get('diagnostics',{}).values()) else 'Aligned; side grip moves arm; index trigger controls aperture')
+                    if result['home_done'] and result['mode']=='release':
+                        hold('Episode ended; grippers fully open; arm joints held',abort_recording=False)
+                        mode='hold'
+                        continue
                     if result['home_done'] and args.sequence:
                         completed=result['mode']
                         opening_completed |= completed=='opening'
@@ -520,6 +720,7 @@ def main():
                                 send(sock,dict(op='sleep_complete',epoch=epoch,issued=now))
                         else:
                             was_restart=restart_active
+                            episode_prepared=True;episode_return=False
                             hold(('Restart reached starting pose' if was_restart else 'Opening reached')+'; release both grips and press left X')
                             state='READY'
                             if was_restart:event('restart_done',home_id=home_id)
@@ -539,22 +740,41 @@ def main():
                             trajectory_id=result.get('trajectory_id'),freeze=result['freeze'][s] or (mode=='teleop' and not hands[s]['grip'])))
             if not planner_proc.is_alive() and not fault:
                 hold('Planner process exited',True)
+            if recorder:
+                if recorder.phase=='recording' and recording_config['episode_time_s'] and recorder.start_ns is not None and time.monotonic_ns()-recorder.start_ns>=recording_config['episode_time_s']*1e9:
+                    record_commands.append(('record-save','unknown'))
+                for command,outcome in record_commands:
+                    result=recording_command(command,time.monotonic(),outcome)
+                    record_last_result=result
+                    print(result,flush=True)
+                    event('recording_command',command=command,result=result)
+                if recorder.error and not recording_failed:
+                    recording_failed=True;hold('Dataset recorder: '+recorder.error)
+                if state not in ('ARMED','OPENING','HOMING','PARKING','RELEASING'):mode='hold'
+                if recorder.phase=='starting':mode='hold'
             if fresh and not planner_pending and planner_proc.is_alive():
                 # Hold jobs initialize/validate geometry even before arming.
                 seq=int(now*1e9)
                 planner_pending=send(planner_sock,dict(t=now,seq=seq,epoch=epoch,mode=mode,
                     home_id=home_id,measured=measured,hands=hands,grip_generation=grip_generation,
-                    restart=restart_active,prepare_restart=state=='RESTART_PREPARING'))
+                    restart=restart_active,episode_return=episode_return,strict_opening=recorder is not None,recording_sequence=recorder is not None,prepare_restart=state=='RESTART_PREPARING'))
             row=dict(t=now,elapsed=elapsed,state=state,reason=reason,measured=measured,
                 feedback=feedback,feedback_fresh=fresh,hands=hands,command=last_result)
             event('tick',**row)
             if twin_proc is not None and twin_proc.is_alive():send(twin_sock,row)
             if video_proc.is_alive(): send(video_sock,row)
             elif now-last_print>1: print('Video recorder unavailable; hardware watchdog remains active',flush=True)
-            if server:
-                server.publish(dict(type='status',tracking=tracking,calibrated=aligned,message=f'{state}: {reason}',phase=state.lower()))
+            status=dict(type='status',hardware=True,record=recorder is not None,
+                tracking=tracking,active_sides=list(sides),alignment_hand=alignment_side,calibrated=aligned,message=f'{state}: {reason}',phase=state.lower())
+            if recorder:
+                status.update(progress_status())
+                if now-last_progress>=.2 or status['phase']!=last_progress_phase:
+                    recorder.sample('status',value=status)
+                    last_progress=now;last_progress_phase=status['phase']
+            if server:server.publish(status)
             if now-last_print>1:
-                print(f'{state}: {reason}',flush=True); last_print=now
+                print(status['summary'] if recorder else f'{state}: {reason}',flush=True)
+                last_print=now
             next_tick=max(next_tick+SUPERVISOR_PERIOD,now)
             time.sleep(max(0,next_tick-time.monotonic()))
     finally:
@@ -567,6 +787,7 @@ def main():
                 try: proc.wait(timeout=.5)
                 except subprocess.TimeoutExpired: proc.kill(); proc.wait()
             sock.close()
+        if recorder:recorder.close()
         for sock,proc in processes:
             send(sock,dict(op='shutdown'))
             proc.join(timeout=3)

@@ -1,5 +1,6 @@
 """Best-effort asynchronous measured-state video. Never runs in a motor worker."""
 import time
+import signal
 import tempfile
 import textwrap
 from pathlib import Path
@@ -12,6 +13,7 @@ from ..recording import Recording
 
 
 def run(sock, profile, output, mode, sides=SIDES):
+    signal.signal(signal.SIGINT,signal.SIG_IGN)  # Finish MP4 through supervisor shutdown.
     model=make_model(profile,sides); data=mujoco.MjData(model)
     overlay=tempfile.NamedTemporaryFile(prefix='quest-overlay-',suffix='.txt',delete=False)
     overlay.close(); Path(overlay.name).write_text('Starting measured-state recording')

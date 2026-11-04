@@ -22,7 +22,7 @@ def test_sequence_opening_clutch_sleep_and_interruptions(tmp_path,failure,side):
     private=tmp_path/'private'; private.mkdir(mode=0o700)
     endpoint=str(private/'control.sock'); output=tmp_path/'session'
     from webxr_teleop.hardware.run import DEFAULT_PROFILE
-    config_args=(['--config',str(DEFAULT_PROFILE.with_name('launch_dual.json')),'--no-twin']
+    config_args=(['--config',str(DEFAULT_PROFILE.with_name('launch.json')),'--no-twin']
         if side=='both' else [])
     profile=json.loads(DEFAULT_PROFILE.read_text())
     sides=('left','right') if side=='both' else (side,)

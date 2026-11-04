@@ -33,3 +33,24 @@ def test_invalid_config_rejected(tmp_path,value):
 
 def test_no_config_keeps_cli_defaults():
     p=parser();assert p.parse_args(configured_argv(p,[])).mode=='mock'
+
+
+@pytest.mark.parametrize('options,enabled', [([],False),(['--twin'],True),(['--twin','--no-twin'],False)])
+@pytest.mark.parametrize('preset',[False,True,'legacy_enabled','legacy_disabled'])
+def test_actual_launcher_twin_is_opt_in(monkeypatch,tmp_path,options,enabled,preset):
+    import sys
+    from webxr_teleop.hardware import run
+    original=argparse.ArgumentParser.parse_args
+    class Parsed(Exception):pass
+    def capture(parser,*args,**kwargs):
+        result=original(parser,*args,**kwargs)
+        assert result.twin is enabled
+        raise Parsed
+    monkeypatch.setattr(argparse.ArgumentParser,'parse_args',capture)
+    config=['--config',str(Path(run.__file__).with_name('launch.json'))] if preset else []
+    if isinstance(preset,str):
+        legacy=tmp_path/'launch.json'
+        legacy.write_text(json.dumps(dict(mode='live',twin=preset=='legacy_enabled')))
+        config=['--config',str(legacy)]
+    monkeypatch.setattr(sys,'argv',['hardware.run','--mode','live',*config,*options])
+    with pytest.raises(Parsed):run.main()  # Stop at parsing, before any hardware access.

@@ -29,6 +29,7 @@ def complete_sleep(bus, guard, message, q, cfg, motion_mode, now, sequence):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--record-actions', action='store_true')
     ap.add_argument('--fd', type=int, required=True)
     ap.add_argument('--parent-pid', type=int, required=True)
     ap.add_argument('--gripper-acceleration',type=float)
@@ -66,6 +67,7 @@ def main():
     try:
         adapter=SoftwareHoldBus if args.manual_start or args.sequence else LeRobotBus
         bus = MockBus(profile,args.side,startup=args.startup) if args.mode=='mock' else adapter(profile,args.side,startup=args.startup)
+        bus.record_actions = args.record_actions
         def startup_cancelled():
             nonlocal shutdown
             pending=receive(sock)
@@ -235,8 +237,18 @@ def main():
                 drift_since=None
             previous_q=q[:]; previous_t=fresh
             seq += 1
+            action = None
+            if args.record_actions and args.mode != 'observe':
+                confirmed = getattr(bus, 'confirmed_action', None)
+                if confirmed:
+                    action = dict(confirmed, t_ns=int(execution_t*1e9),
+                                  write_performed=goal_written is not False,
+                                  write_complete_ns=time.monotonic_ns(),
+                                  command_seq=executed['seq'] if executed else None,
+                                  mode=motion_mode, requested_qpos=target,
+                                  observation_read_started_ns=int(read_started*1e9))
             send(sock,dict(type='feedback',q=q,goal=target,t=fresh,seq=seq,state=guard.state,
-                           epoch=guard.epoch,reason=guard.reason,telemetry=telemetry,hold_command_confirmed=guard.state=='HOLD',hold_confirmed=guard.state=='HOLD' and settled,health=health))
+                           epoch=guard.epoch,reason=guard.reason,telemetry=telemetry,action=action,hold_command_confirmed=guard.state=='HOLD',hold_confirmed=guard.state=='HOLD' and settled,health=health))
             if stop or shutdown:
                 break
             time.sleep(max(0.,PERIOD-(time.monotonic()-start)))

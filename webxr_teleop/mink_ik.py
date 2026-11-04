@@ -38,7 +38,8 @@ class JointMotionLimit(mink.Limit):
 
 class MinkIK:
     def __init__(self, model, data, joint_ids, site, *, joint_speed=math.radians(60),
-                 damping_cost=0.02, posture_cost=0.005, planar_bounds=None, joint_acceleration=None):
+                 damping_cost=0.02, posture_cost=0.005, planar_bounds=None, joint_acceleration=None,
+                 preferred_posture=None, preferred_posture_cost=None, joint_damping_cost=None):
         if not np.isfinite(joint_speed) or joint_speed <= 0:
             raise ValueError('joint_speed must be finite and positive')
         if not all(np.isfinite(x) and x >= 0 for x in (damping_cost, posture_cost)):
@@ -55,7 +56,33 @@ class MinkIK:
         cost[self.dofs] = posture_cost
         self.posture = mink.PostureTask(model, cost=cost)
         self.posture.set_target(data.qpos.copy())
-        self.tasks = [self.frame, self.posture, mink.DampingTask(model, cost=damping_cost)]
+        self.tasks = [self.frame, self.posture]
+        def arm_vector(value, name):
+            array=np.asarray(value,dtype=float)
+            if array.shape!=(len(self.dofs),) or not np.all(np.isfinite(array)):
+                raise ValueError(f'{name} must contain one finite value per arm joint')
+            return array.copy()
+        self.preferred_posture=None
+        if preferred_posture is not None:
+            reference=arm_vector(preferred_posture,'preferred_posture')
+            weights=arm_vector(preferred_posture_cost,'preferred_posture_cost')
+            if np.any(weights<0):raise ValueError('preferred_posture_cost must be nonnegative')
+            bounds=model.jnt_range[joint_ids]
+            if np.any(reference<bounds[:,0]) or np.any(reference>bounds[:,1]):
+                raise ValueError('preferred_posture must be within joint limits')
+            cost=np.zeros(model.nv);cost[self.dofs]=weights
+            target=data.qpos.copy();target[self.qids]=reference
+            self.preferred_posture=mink.PostureTask(model,cost=cost)
+            self.preferred_posture.set_target(target)
+            self.tasks.append(self.preferred_posture)
+        elif preferred_posture_cost is not None:
+            raise ValueError('preferred_posture_cost requires preferred_posture')
+        damping=np.zeros(model.nv)
+        damping[self.dofs]=(damping_cost if joint_damping_cost is None else
+                            arm_vector(joint_damping_cost,'joint_damping_cost'))
+        if np.any(damping<0):raise ValueError('joint_damping_cost must be nonnegative')
+        self.damping=mink.DampingTask(model,cost=damping)
+        self.tasks.append(self.damping)
         # Keep the original 0.02 rad arm margin without shrinking the much smaller
         # finger ranges. Other arms and fingers are locked inside the QP as well
         # as excluded from the eventual write-back.
@@ -81,7 +108,7 @@ class MinkIK:
         self.posture.set_target(qpos.copy())
         if self.motion_limit is not None:self.motion_limit.previous[:]=0
 
-    def advance(self, data, p, r, dt):
+    def advance(self, data, p, r, dt, *, stopping=False):
         if not np.isfinite(dt) or dt <= 0 or not np.all(np.isfinite(p)) or not np.all(np.isfinite(r)):
             return IKResult(False, 0., 0., reason='Invalid target or timestep')
         dt = min(dt, 0.05)
@@ -89,8 +116,22 @@ class MinkIK:
             return IKResult(False, 0., 0., reason='Arm is outside planar bounds', plane_limited=True)
         self.configuration.update(data.qpos)
         self.frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(r), p))
+        if self.motion_limit is not None:
+            # Unit task gain asks to remove the whole error in one control
+            # tick. With acceleration constraints that causes overshoot and
+            # repeated reversals even around a nearly stationary target.
+            # Express convergence in seconds, independent of planner cadence;
+            # scale posture tasks too so their relative preference is unchanged.
+            gain = min(1.0, dt / 0.10)
+            for task in (self.frame, self.posture, self.preferred_posture):
+                if task is not None:
+                    task.gain = gain
         try:
-            velocity = mink.solve_ik(self.configuration, self.tasks, dt, solver='daqp',
+            # Braking uses the same joint acceleration, speed and geometry
+            # constraints, but removes pose/posture errors that would drive
+            # continued motion toward a stationary controller's old target.
+            tasks = [self.damping] if stopping else self.tasks
+            velocity = mink.solve_ik(self.configuration, tasks, dt, solver='daqp',
                                      damping=1e-8, limits=self.limits, safety_break=True, primal_tol=1e-10)
         except (mink.NoSolutionFound, mink.NotWithinConfigurationLimits) as exc:
             return IKResult(False, 0., 0., reason=str(exc))

@@ -2,6 +2,14 @@
 
 `record_ik_calibration.py` records evidence without changing the mapping or publishing robot commands. Run the existing Quest bridge and `quest_aloha_sim.py` separately. Use a helper to read the terminal cues while the operator wears the headset. Run the right and left hands in separate sessions, moving the camera between sessions as needed.
 
+This is a **legacy ROS calibration recording** workflow, separate from hardware
+HDF5 demonstration collection. For live teleoperation without dataset recording,
+arm selection (`left` / `right` / `both`) and activating rig settings, use
+[QUICKSTART.md](QUICKSTART.md). For opt-in hardware dataset recording, use
+[RECORDING_WORKFLOW.md](RECORDING_WORKFLOW.md). Here, `--side` selects the hand
+whose telemetry is required for calibration capture; it does not activate a
+hardware arm or change `rig.json`.
+
 ## Setup and capture
 
 Use the ROS environment already used by this project. At implementation time, this environment lacks pip and the three capture packages below. Install these additional capture dependencies there:

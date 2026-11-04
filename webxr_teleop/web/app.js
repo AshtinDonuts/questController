@@ -13,6 +13,15 @@ let lastRightStick = false;
 let referenceEpoch = 0;
 let freshnessToken = null;
 let packetSequence = 0;
+let statusDirty = false;
+let lastStatusRender = -Infinity;
+
+function flushStatus(now = Date.now()) {
+  if (!statusDirty || now - lastStatusRender < 100) return;
+  statusDirty = false;
+  lastStatusRender = now;
+  renderStatus();
+}
 
 function resetReference() {
   referenceEpoch += 1;
@@ -38,7 +47,7 @@ function connect() {
     let msg;
     try { msg = JSON.parse(event.data); } catch (e) { return; }
     if (msg.type === 'freshness') freshnessToken = msg.token;
-    if (msg.type === 'status') { status = msg; renderStatus(); }
+    if (msg.type === 'status') { status = msg; statusDirty = true; }
     if (msg.type === 'haptic') pulse(msg.hand, msg.intensity, msg.duration_ms);
   };
 }
@@ -52,7 +61,12 @@ function setConnection(on) {
   const pill = $('connection');
   pill.textContent = on ? 'Connected' : 'Disconnected';
   pill.className = `pill ${on ? 'pill-on' : 'pill-off'}`;
-  if (!on) setStatusText('Robot PC disconnected - reconnecting...', '#ff6060');
+  if (!on) {
+    statusDirty = false;
+    setStatusText('Robot PC disconnected - reconnecting...', '#ff6060');
+    $('recordingHudText').setAttribute('value', 'DISCONNECTED\nRecording status unavailable');
+    $('recordingHudText').setAttribute('color', '#ff6060');
+  }
 }
 
 // ----------------------------------------------------------------------------- status
@@ -64,10 +78,14 @@ function formatTime(seconds) {
 
 function warnings() {
   const out = [];
-  if (status.tracking === false) out.push('right controller not tracked');
+  if (status.tracking === false) out.push('active controller tracking lost');
   if (status.ik_ok === false) out.push('tracking limited');
   if (status.clipped) out.push('workspace limit');
   if (status.encoder_backlog > 30) out.push('video encoder falling behind');
+  if (status.recording_error) out.push(status.recording_error);
+  for (const [name, camera] of Object.entries(status.cameras || {})) {
+    if (!camera.healthy) out.push(`${name}: camera unavailable`);
+  }
   return out;
 }
 
@@ -75,7 +93,7 @@ function setFlag(id, on, bad = false) {
   $(id).className = `flag${on ? ' on' : ''}${bad ? ' bad' : ''}`;
 }
 
-// Short hint on the right controller: step + next button (+ warning). Hidden while gripping.
+// Recording status stays visible on the right controller while gripping.
 const NEXT = {
   idle: 'A: move home', homing: 'moving home...  B: cancel', ready: 'A: start recording',
   recording: 'A: save   B: discard', saving: 'saving...', stopped: 'done', teleop: 'grip: move',
@@ -92,29 +110,44 @@ function renderStatus() {
   const phase = status.phase || 'idle';
   const title = (status.title || phase).toUpperCase();
   const recording = phase === 'recording';
-  const episode = status.record === false ? '' : `ep ${status.episode ?? '-'}/${status.target_episodes ?? '-'}`;
+  if (status.hardware) {
+    $('controlA').textContent = status.record ? 'Start / save episode; after saving, request return to opening.' : 'Dataset recording is disabled.';
+    $('controlB').textContent = 'Powered STOP. Abort the active dataset episode.';
+    $('controlY').textContent = 'Hold for one second to request sleep.';
+    $('recordingNote').textContent = 'Terminal: → starts/saves; ↑ returns to opening; ← discards; Space stops. X aligns before each episode. In recording mode, Escape / Ctrl+C sleeps then exits; an unfinished episode is aborted.';
+  }
+  const episode = status.record === false ? '' : `${status.saved ?? 0}/${status.target_episodes ?? '-'} saved`;
 
   // 2D page (browser / monitor)
   $('phase').textContent = title;
   $('phase').className = `phase phase-${phase}`;
-  $('timer').textContent = recording ? formatTime(status.elapsed_s) : '';
+  $('timer').textContent = status.progress_text || (recording ? formatTime(status.elapsed_s) : '');
+  const progress = $('episodeProgress');
+  progress.hidden = !status.record || status.episode_progress == null;
+  progress.value = status.episode_progress ?? 0;
   $('hint').textContent = status.hint || '';
-  $('episode').textContent = status.record === false ? 'not recording' : `${status.episode ?? '-'} / ${status.target_episodes ?? '-'}`;
-  $('saved').textContent = status.record === false ? '-' : `${status.saved ?? 0}`;
+  $('episode').textContent = status.record === false ? 'not recording' : `${status.episode || '-'}`;
+  $('saved').textContent = status.record === false ? '-' : `${status.saved ?? 0} / ${status.target_episodes ?? '-'}`;
   $('task').textContent = status.task || '-';
-  $('message').textContent = status.message || '';
+  $('message').textContent = [status.message, status.recording_result].filter(Boolean).join(' | ');
   setFlag('flagTracking', !!status.tracking, status.tracking === false);
   setFlag('flagDeadman', !!status.deadman);
   setFlag('flagGripper', !!status.gripper_closed);
   setFlag('flagIk', status.ik_ok !== false, status.ik_ok === false);
   $('flagGripper').textContent = status.gripper_closed ? 'Gripper closed' : 'Gripper open';
 
-  // Headset: a short hint lying on the right controller (no text in front of the eyes).
-  const head = [recording ? `REC ${formatTime(status.elapsed_s)}` : title, episode].filter(Boolean).join('   ');
+  // Headset: persistent progress below the center of view, plus controller hints.
+  const head = [title, episode].filter(Boolean).join('   ');
   const warn = warnings().join(' | ');
-  const lines = [head, status.hint || NEXT[phase] || ''];
+  const lines = [head];
+  if (status.progress_text) lines.push(status.progress_text);
+  else if (recording) lines.push(formatTime(status.elapsed_s));
+  lines.push(status.hint || NEXT[phase] || '');
   if (warn) lines.push(warn);
   setStatusText(lines.join('\n'), recording ? '#ff5050' : warn ? '#ffb020' : '#ffffff');
+  $('recordingHud').setAttribute('visible', !!status.record);
+  $('recordingHudText').setAttribute('value', lines.slice(0, 3).join('\n'));
+  $('recordingHudText').setAttribute('color', recording ? '#ff7070' : warn ? '#ffb020' : '#ffffff');
 }
 
 // ----------------------------------------------------------------------------- controllers
@@ -212,14 +245,19 @@ AFRAME.registerComponent('teleop-stream', {
       lastRightStick = right.buttons.thumbstick;
     }
     send({ type: 'controllers', freshness: freshnessToken, sequence: ++packetSequence, reference_epoch: referenceEpoch, t: Date.now(), left, right });
-
-    $('leftHandInfo').setAttribute('value', poseText(this.left.object3D));
-    $('rightHandInfo').setAttribute('value', poseText(this.right.object3D));
-    $('headsetInfo').setAttribute('value', poseText(this.head.object3D));
-    // Hide the hints while the right grip is held, i.e. while actually teleoperating.
+    // Send tracking first. Text geometry and DOM work need not run at XR rate.
+    const now = Date.now();
+    flushStatus(now);
+    if (this.lastPoseText == null || now - this.lastPoseText >= 100) {
+      this.lastPoseText = now;
+      $('leftHandInfo').setAttribute('value', poseText(this.left.object3D));
+      $('rightHandInfo').setAttribute('value', poseText(this.right.object3D));
+      $('headsetInfo').setAttribute('value', poseText(this.head.object3D));
+    }
+    // Keep recording progress visible during teleoperation.
     const gripping = !!(right && right.buttons.squeeze);
     $('leftHandHint').object3D.visible = !gripping;
-    $('rightHandHint').object3D.visible = !gripping;
+    $('rightHandHint').object3D.visible = !!status.record || !gripping;
     this.updateAids(left, right);
   },
   updateAids(left, right) {
@@ -255,30 +293,43 @@ async function setupEnterButton() {
     note.textContent = 'WebXR is not available in this browser. Open this page in the Meta Quest browser.';
     return;
   }
-  const vr = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
-  if (!vr) {
-    note.textContent = 'Immersive VR is unavailable. Open this HTTPS page in Meta Quest Browser.';
-    return;
+  const vrButton = $('enterVr');
+  const [ar, vr] = await Promise.all([
+    navigator.xr.isSessionSupported('immersive-ar').catch(() => false),
+    navigator.xr.isSessionSupported('immersive-vr').catch(() => false),
+  ]);
+  button.disabled = !ar;
+  vrButton.disabled = !vr;
+  button.textContent = 'Enter passthrough';
+  note.textContent = ar
+    ? 'Passthrough shows the real room and robot with controller controls and status overlaid.'
+    : 'Passthrough is unavailable. Use Meta Quest Browser over HTTPS. VR hides the real room.';
+  function bindEntry(control, passthrough) {
+    control.onclick = async () => {
+      button.disabled = true;
+      vrButton.disabled = true;
+      const label = passthrough ? 'passthrough' : 'VR';
+      try {
+        // Invoke directly from the user gesture. Never silently fall back
+        // from passthrough to a mode that hides the operator's surroundings.
+        if (passthrough) await scene.enterAR();
+        else await scene.enterVR();
+        note.textContent = `${label} active. Release active grips and press X to align when ready.`;
+      } catch (err) {
+        note.textContent = `Could not enter ${label}: ${err.message || err}. Close other immersive sessions, then retry.`;
+      } finally {
+        button.disabled = !ar;
+        vrButton.disabled = !vr;
+      }
+    };
   }
-  button.disabled = false;
-  button.textContent = 'Enter VR';
-  note.textContent = 'Enter VR to stream both controllers. This session does not request AR passthrough.';
-  button.onclick = async () => {
-    button.disabled = true;
-    try {
-      // Call directly from the click gesture; don't select AR merely because
-      // the browser advertises it. AR startup can fail independently of VR.
-      await scene.enterVR();
-      note.textContent = 'VR active. Release both grips; press left X when the robot is READY.';
-    } catch (err) {
-      note.textContent = `Could not enter VR: ${err.message || err}. Close other immersive sessions, then tap Enter VR to retry.`;
-    } finally {
-      button.disabled = false;
-    }
-  };
+  if (ar) bindEntry(button, true);
+  if (vr) bindEntry(vrButton, false);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Also update the desktop page when no XR animation loop is running.
+  setInterval(flushStatus, 100);
   const scene = $('scene');
   const attach = () => {
     scene.setAttribute('teleop-stream', '');

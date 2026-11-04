@@ -86,7 +86,7 @@ def main():
                         else:print('POSE REACHED. Torque remains ON at the target.',flush=True)
                         success=True;break
                 else:settled=None
-                if now-start>90:raise RuntimeError('Pose move timed out')
+                if now-start>10:raise RuntimeError('Pose move timed out')
                 time.sleep(.05)
         except BaseException as exc:
             if bus and not getattr(bus,'torque_release_attempted',False) and last_raw is not None and time.monotonic()-fresh<=.1:

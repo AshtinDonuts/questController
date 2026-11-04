@@ -2,10 +2,12 @@
 import os
 import time
 import threading
+import signal
 from .ipc import receive
 
 
 def run(sock, profile, sides):
+    signal.signal(signal.SIGINT,signal.SIG_IGN)  # Keep feedback visible during exit sleep.
     # A dedicated process allows an interactive GLFW window even when the video
     # recorder uses EGL. Closing this window does not stop or command the robot.
     os.environ['MUJOCO_GL']='glfw'

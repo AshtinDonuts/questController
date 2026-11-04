@@ -66,7 +66,7 @@
         3.12
       ],
       "base_position": [
-        -0.4075,
+        -0.32,
         0.0,
         0.02
       ],
@@ -96,7 +96,8 @@
         0
       ],
       "sequence_verified": false,
-      "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose."
+      "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose.",
+      "opening_gripper": 0.8
     },
     "right": {
       "port": "/dev/ttyDXL_follower_right",
@@ -153,7 +154,7 @@
         3.12
       ],
       "base_position": [
-        0.4075,
+        0.32,
         0.0,
         0.02
       ],
@@ -183,13 +184,14 @@
         0
       ],
       "sequence_verified": false,
-      "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose."
+      "sequence_verification_note": "Simulation placeholders only; sleep is not the physical folded pose.",
+      "opening_gripper": 0.8
     }
   },
   "provenance": {
     "mounting_geometry": {
       "source": "User measurement reported 2026-10-27",
-      "base_center_separation_m": 0.815,
+      "base_center_separation_m": 0.64,
       "layout": "Shoulder to shoulder, same horizontal line and height, both facing forward",
       "world_frame": "+X right, +Y forward, +Z up; origin midway between base centers in X/Y",
       "base_height_note": "Existing model base Z=0.02 m above table retained; absolute mounting height was not newly measured"

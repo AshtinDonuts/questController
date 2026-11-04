@@ -66,7 +66,7 @@
         3.14158
       ],
       "base_position": [
-        -0.4075,
+        -0.32,
         0.0,
         0.02
       ],
@@ -116,7 +116,8 @@
             0.0,
             -2.109375
           ],
-          "gripper_policy": "Preserve current opening; source gripper is not commanded"
+          "gripper_policy": "Command saved ceremony aperture on recording-session opening/return; operator requested",
+          "gripper_aperture": 0.5087719345092774
         },
         "sleep": {
           "path": "/home/King/alohaX_lerobot_fork/.cache/poses/rest_pose.json",
@@ -165,7 +166,8 @@
         "velocity_counts": 14,
         "acceleration_counts": 4
       },
-      "gripper_current_cap_counts": 200
+      "gripper_current_cap_counts": 200,
+      "opening_gripper": 0.5087719345092774
     },
     "right": {
       "port": "/dev/ttyDXL_follower_right",
@@ -222,7 +224,7 @@
         3.14158
       ],
       "base_position": [
-        0.4075,
+        0.32,
         0.0,
         0.02
       ],
@@ -272,7 +274,8 @@
             0.0,
             -2.109375
           ],
-          "gripper_policy": "Preserve current opening; source gripper is not commanded"
+          "gripper_policy": "Command saved ceremony aperture on recording-session opening/return; operator requested",
+          "gripper_aperture": 0.5087719345092774
         },
         "sleep": {
           "path": "/home/King/alohaX_lerobot_fork/.cache/poses/rest_pose.json",
@@ -316,20 +319,21 @@
         -0.04141748127291231
       ],
       "sequence_authorized": true,
-      "sequence_authorization_note": "User explicitly requested copying the left sequence verification/authorization settings to the right on 2026-10-27. Physical sequence verification remains false, matching the left. Left source note: User explicitly approved live workflow, automatic powered opening startup and removal of sleep joint-limit rejection in this chat on 2026-10-16. This is operator authorization, not physical verification."
+      "sequence_authorization_note": "User explicitly requested copying the left sequence verification/authorization settings to the right on 2026-10-27. Physical sequence verification remains false, matching the left. Left source note: User explicitly approved live workflow, automatic powered opening startup and removal of sleep joint-limit rejection in this chat on 2026-10-16. This is operator authorization, not physical verification.",
+      "opening_gripper": 0.5087719345092774
     }
   },
   "provenance": {
     "lerobot_config": "/home/King/alohaX_lerobot_fork/lerobot/configs/robot/aloha.yaml",
     "simulation_scene": "/home/King/Desktop/QuestController/scenes/dual_viperx_scene.xml",
     "simulation_robot": "/home/King/Desktop/QuestController/scenes/dual_viperx.xml",
-    "usage": "Measured dual mounting: base centers 0.815 m apart, shoulder to shoulder and both forward. Supports one or both selected arms subject to existing commissioning checks.",
+    "usage": "Measured dual mounting: base centers 0.64 m apart, shoulder to shoulder and both forward. Supports one or both selected arms subject to existing commissioning checks.",
     "mapping": "User-confirmed left mapping copied to the right. On 2026-10-27 the user explicitly requested copying the left mapping verification and sequence verification/authorization settings as well. Right port, calibration/fingerprint, electrical settings and measured mounting transform are preserved; no independent right physical test is claimed.",
     "planes": "Simulation CLI defaults, relative to each base; table is 0.02 m below base origin.",
     "verification": "Calibration hashes identify imported files only, not physical verification.",
     "mounting_geometry": {
       "source": "User measurement reported 2026-10-27",
-      "base_center_separation_m": 0.815,
+      "base_center_separation_m": 0.64,
       "layout": "Shoulder to shoulder, same horizontal line and height, both facing forward",
       "world_frame": "+X right, +Y forward, +Z up; origin midway between base centers in X/Y",
       "base_height_note": "Existing model base Z=0.02 m above table retained; absolute mounting height was not newly measured"

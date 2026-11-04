@@ -30,7 +30,7 @@ class Recording:
              '-s', '640x480', '-r', str(fps), '-i', '-', '-an',
              *(['-vf', video_filter] if video_filter else []), '-c:v', 'libx264',
              '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-             str(self.directory / 'session.mp4')], stdin=subprocess.PIPE)
+             str(self.directory / 'session.mp4')], stdin=subprocess.PIPE,start_new_session=True)
         self._manifest('recording')
 
     def _manifest(self, state):

@@ -4,6 +4,8 @@ __pycache__/
 *.mp4
 *.avi
 *.bag
+*.hdf5
+*.partial
 aloha_neutral.png
 aloha_neutral.ppm
 

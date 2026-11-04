@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from webxr_teleop.hardware.bus import LeRobotBus
-from webxr_teleop.hardware.core import load_profile
+from webxr_teleop.hardware.core import MOTORS, load_profile
 from webxr_teleop.hardware.run import DEFAULT_PROFILE
 from webxr_teleop.hardware.planner import Planner
 from webxr_teleop.hardware.run import spawn_worker
@@ -37,7 +37,7 @@ class FakeFollower(LeRobotBus):
     def read_raw(self):
         self.events.append(('read',self.position.tolist()))
         return self.position.copy()
-    def write_raw_hold(self,raw):
+    def write_raw_hold(self,raw,**kwargs):
         self.events.append(('goals',raw.tolist())); self.goals=raw.copy()
     def configure_motion_caps(self): self.events.append(('caps',))
     def watchdog(self): self.events.append(('watchdog',)); self.regs['Bus_Watchdog']=[15]*9
@@ -60,6 +60,54 @@ def test_already_enabled_does_not_cycle_or_reenable():
     bus=FakeFollower(torque=1);bus.startup_hold()
     assert not any(e[0]=='torque' for e in bus.events)
     assert bus.startup_report['verified']
+
+
+class RawHoldFollower(FakeFollower):
+    """Exercise real raw goal validation and readback, including shadow motors."""
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        follower=self
+        class Writer:
+            def __init__(self):self.values={}
+            def addParam(self,idx,data):
+                self.values[idx]=int.from_bytes(bytes(data),'little',signed=True)
+            def txPacket(self):
+                follower.goals=np.array([self.values[i] for i in range(9)],dtype=np.int32)
+                follower.events.append(('goals',follower.goals.tolist()))
+                return 0
+        self.bus.motors={n:(i,) for i,n in enumerate(MOTORS)}
+        self.bus.port_handler=None;self.bus.packet_handler=None
+        self.dxl=SimpleNamespace(COMM_SUCCESS=0,GroupSyncWrite=lambda *args:Writer())
+
+    def register(self,name,names=None):
+        if name=='Goal_Position':return self.goals.tolist()
+        return super().register(name,names)
+
+    def read_raw(self):
+        if any(e[0]=='goals' for e in self.events):self.position=self.goals.copy()
+        return super().read_raw()
+
+    write_raw_hold=LeRobotBus.write_raw_hold
+
+
+@pytest.mark.parametrize('deflection',[-6,-3,3,6])
+def test_powered_startup_accepts_bounded_loaded_shadow_deflection(deflection):
+    bus=RawHoldFollower(torque=1)
+    bus.position[2]+=deflection;bus.position[4]-=deflection
+    q,health=bus.startup_hold()
+    assert health['torque'] and bus.startup_report['verified']
+    assert not bus.startup_report['torque_enabled_once']
+    assert not any(e[0]=='torque' for e in bus.events)
+    assert bus.goals[1]==bus.goals[2]==bus.position[1]
+    assert bus.goals[3]==bus.goals[4]==bus.position[3]
+
+
+@pytest.mark.parametrize('torque,deflection',[(0,3),(0,-3),(1,7),(1,-7)])
+def test_raw_startup_rejects_pair_disagreement_before_writes(torque,deflection):
+    bus=RawHoldFollower(torque=torque);bus.position[2]+=deflection
+    with pytest.raises(ValueError,match='Raw primary/shadow'):bus.startup_hold()
+    assert not any(e[0] in ('torque','goals','caps') for e in bus.events)
+    assert bus.regs['Torque_Enable']==[torque]*9
 
 
 @pytest.mark.parametrize('reset',[4096,-4096,20])
@@ -109,7 +157,7 @@ def test_cancel_after_enable_preserves_torque():
 
 def test_failed_goal_preload_never_enables():
     bus=FakeFollower()
-    def fail(raw):raise ConnectionError('readback mismatch')
+    def fail(raw,**kwargs):raise ConnectionError('readback mismatch')
     bus.write_raw_hold=fail
     with pytest.raises(ConnectionError):bus.startup_hold()
     assert not any(e[0]=='torque' for e in bus.events)

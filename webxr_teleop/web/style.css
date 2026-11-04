@@ -40,6 +40,11 @@ h2 { font-size: 17px; margin: 0 0 10px; }
 .phase-ready { background: var(--ready); }
 .phase-recording { background: var(--recording); }
 .phase-saving, .phase-stopped { background: var(--saving); }
+.phase-opening, .phase-returning, .phase-releasing, .phase-sleeping { background: var(--homing); }
+.phase-align, .phase-between { background: var(--saving); }
+.phase-complete, .phase-parked { background: var(--ready); }
+.phase-failed, .phase-hold { background: #8b2525; }
+#episodeProgress { width: 100%; height: 12px; margin-top: 12px; accent-color: #ff5050; }
 .timer { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; }
 .hint { font-size: 20px; margin: 12px 0; }
 
@@ -71,3 +76,5 @@ kbd { background: #21262d; border: 1px solid var(--border); border-radius: 4px; 
 
 /* The A-Frame canvas is only used inside the headset session. */
 a-scene { position: fixed; width: 1px; height: 1px; left: 0; top: 0; opacity: 0; pointer-events: none; }
+
+.enter-vr-secondary { background: #30363d; font-size: 16px; padding: 12px; }

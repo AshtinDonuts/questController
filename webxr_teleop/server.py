@@ -216,9 +216,18 @@ class VRServer:
                 await websocket.send(json.dumps(dict(type='freshness', token=token)))
                 await asyncio.sleep(.05)
         challenge_task = asyncio.create_task(challenge()) if self.hardware_freshness else None
+        async def status_updates():
+            # One sender per connection and one latest-value slot: slow sends
+            # cannot queue hundreds of obsolete UI updates ahead of tracking.
+            previous = None
+            while True:
+                latest = self._status
+                if latest and latest is not previous:
+                    await websocket.send(json.dumps({"type": "status", **latest}))
+                    previous = latest
+                await asyncio.sleep(.1)
+        status_task = asyncio.create_task(status_updates())
         try:
-            if self._status:
-                await websocket.send(json.dumps({"type": "status", **self._status}))
             async for message in websocket:
                 try:
                     data = json.loads(message)
@@ -269,6 +278,8 @@ class VRServer:
         except Exception as exc:  # noqa: BLE001 - a dropped headset must not kill the server
             print(f"[VR] Headset connection closed: {exc}")
         finally:
+            status_task.cancel()
+            await asyncio.gather(status_task, return_exceptions=True)
             if challenge_task:
                 challenge_task.cancel()
                 await asyncio.gather(challenge_task, return_exceptions=True)
@@ -296,6 +307,7 @@ class VRServer:
         """Send a JSON message to every connected headset (thread-safe, non-blocking)."""
         if message.get("type") == "status":
             self._status = {k: v for k, v in message.items() if k != "type"}
+            return  # The connection's bounded-rate task sends only the latest.
         if self._loop is None or not self._clients:
             return
         payload = json.dumps(message)

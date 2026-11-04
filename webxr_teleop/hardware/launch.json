@@ -1,0 +1,13 @@
+{
+  "mode": "live",
+  "side": "both",
+  "sequence": true,
+  "profile": "rig.json",
+  "translation_scale": 0.7,
+  "rotation_scale": 0.7,
+  "tracking_position_deadband_m": 0.002,
+  "tracking_rotation_deadband_deg": 1.0,
+  "teleop_joint_speed": 13.0,
+  "teleop_joint_acceleration": 40.0,
+  "gripper_speed": 1.0
+}

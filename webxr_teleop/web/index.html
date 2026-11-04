@@ -8,7 +8,7 @@
     <!-- A-Frame and the assets it would fetch from its CDN (controller models, font) are bundled. -->
     <script>window.AFRAME_CDN_ROOT = "vendor/cdn/";</script>
     <script src="vendor/aframe.min.js"></script>
-    <script src="app.js?v=vr-entry-2" defer></script>
+    <script src="app.js?v=status-backpressure-4" defer></script>
   </head>
   <body>
     <main class="page">
@@ -25,9 +25,10 @@
           <span id="phase" class="phase phase-idle">—</span>
           <span id="timer" class="timer"></span>
         </div>
+        <progress id="episodeProgress" max="1" value="0" aria-label="Episode time progress" hidden></progress>
         <div id="hint" class="hint">Waiting for the robot…</div>
         <div class="status-grid">
-          <div><span class="label">Episode</span><span id="episode">—</span></div>
+          <div><span class="label">Episode attempt</span><span id="episode">—</span></div>
           <div><span class="label">Saved</span><span id="saved">—</span></div>
           <div class="wide"><span class="label">Task</span><span id="task">—</span></div>
         </div>
@@ -40,7 +41,8 @@
         <div id="message" class="message"></div>
       </section>
 
-      <button id="enterXr" class="enter-xr" disabled>Enter VR</button>
+      <button id="enterXr" class="enter-xr" disabled>Enter passthrough</button>
+      <button id="enterVr" class="enter-xr enter-vr-secondary" disabled>Enter VR (hides the room)</button>
       <p id="xrNote" class="note"></p>
 
       <section class="card">
@@ -48,19 +50,23 @@
         <table class="controls">
           <tr><th>Grip (hold)</th><td>Move the matching arm (left grip in dual mode). Release to re-position your hand ("clutch").</td></tr>
           <tr><th>Trigger</th><td>Close the matching gripper while held.</td></tr>
-          <tr><th>Right A</th><td>Next step: move home → start recording → save episode.</td></tr>
-          <tr><th>Right B</th><td>Discard the episode being recorded.</td></tr>
-          <tr><th>Left Y</th><td>Slowly move all active arms to the home pose.</td></tr>
+          <tr><th>Right A</th><td id="controlA">Next step: move home → start recording → save episode.</td></tr>
+          <tr><th>Right B</th><td id="controlB">Discard the episode being recorded.</td></tr>
+          <tr><th>Left Y</th><td id="controlY">Slowly move all active arms to the home pose.</td></tr>
           <tr><th>Left X</th><td>Align the frame: release both grips (dual mode); hold the right controller naturally: red X right, green Y up, <b style="color:#5555ff">blue +Z backward</b> (−Z forward along the arm's reach), then press. World axes: X right, Y forward, Z up.</td></tr>
           <tr><th>Right stick click</th><td>Show / hide the alignment aids: each active gripper’s orientation (translucent axes at its controller) and the robot base axes (above the left controller).</td></tr>
         </table>
-        <p class="note">Terminal: Ctrl+C stops and finalizes the session MP4. A/B manage episode markers; the whole session is recorded.</p>
+        <p class="note" id="recordingNote">Terminal: Ctrl+C stops and finalizes the session MP4. A/B manage episode markers; the whole session is recorded.</p>
       </section>
     </main>
 
-    <a-scene id="scene" embedded vr-mode-ui="enabled: false" webxr="optionalFeatures: local-floor">
+    <a-scene id="scene" embedded xr-mode-ui="enabled: false" renderer="alpha: true" webxr="optionalFeatures: local-floor">
       <a-entity id="head" camera look-controls="enabled: false" wasd-controls="enabled: false">
         <a-text id="headsetInfo" value="Headset: ..." position="0 0.2 -0.5" scale="0.05 0.05 0.05" color="yellow" align="center"></a-text>
+        <a-entity id="recordingHud" position="0 -0.25 -0.85" visible="false">
+          <a-plane width="0.70" height="0.16" color="#101820" opacity="0.88"></a-plane>
+          <a-text id="recordingHudText" position="0 0 0.002" width="0.66" align="center" color="#ffffff" value="Waiting for recording status"></a-text>
+        </a-entity>
       </a-entity>
 
       <!-- Controller models with RGB (XYZ) axes and a Pos/Rot readout, as in XLeVR. -->

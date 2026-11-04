@@ -1,5 +1,20 @@
 # Updated Quest browser teleoperation
 
+## Current hardware workflow
+
+Use [QUICKSTART.md](QUICKSTART.md) for live left-only, right-only or dual-arm
+operation. Select the checked-in `launch.json` preset and override `--side`
+with `left`, `right` or `both`; the selected entries in `rig.json` supply the
+arm-specific settings. Only controllers matching the selected arms must remain tracked. Left-only
+alignment uses the left controller; right-only/dual uses the right. Terminal X
+aligns when the Quest X controller is unavailable.
+
+Dataset recording is **opt-in**: without `--recording-config`, hardware
+teleoperation still saves its diagnostic MP4/logs but creates no HDF5 episodes.
+Add a recording configuration for HDF5 collection and camera acquisition; see
+[RECORDING_WORKFLOW.md](RECORDING_WORKFLOW.md). The WebXR simulation and legacy
+calibration recorders described below are separate workflows.
+
 ## Planned real-robot architecture
 
 The [Quest → ALOHA / dual ViperX control pipeline](docs/quest_aloha_control_pipeline.svg) is the project reference for the planned real-robot architecture (15 October 2026). It covers exclusive teleoperation/homing control, independent motor workers, hardware feedback, stop handling, and latched powered hold. Implementation and hardware validation are pending; the diagram describes planned behavior.

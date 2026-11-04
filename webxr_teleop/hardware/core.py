@@ -11,6 +11,8 @@ MOTORS = ('waist', 'shoulder', 'shoulder_shadow', 'elbow', 'elbow_shadow',
 TTL = .150
 FEEDBACK_TTL = .100
 PERIOD = .020
+IK_POSTURE_COST = (0., .015, .015, .03, 0., 0.)
+IK_DAMPING_COST = (.02, .02, .02, .10, .02, .02)
 
 
 def vector(q, n=7):
@@ -35,6 +37,9 @@ def load_profile(path, live=False, sides=SIDES, require_motor_watchdog=True):
     p = json.loads(Path(path).read_text())
     if p.get('version') != 1:
         raise ValueError('Unsupported hardware profile version')
+    for key,default in (('ik_preferred_posture_cost',IK_POSTURE_COST),('ik_joint_damping_cost',IK_DAMPING_COST)):
+        p[key]=vector(p.get(key,list(default)),6)
+        if any(x<0 for x in p[key]):raise ValueError(f'{key} must be nonnegative')
     for side in SIDES:
         a = p['arms'][side]
         for name in ('home_rad', 'sign', 'offset_deg', 'lower_rad', 'upper_rad'):
@@ -48,6 +53,9 @@ def load_profile(path, live=False, sides=SIDES, require_motor_watchdog=True):
             raise ValueError('Mapping signs must be -1 or +1')
         if any(lo >= hi or not lo <= h <= hi for lo, hi, h in zip(a['lower_rad'], a['upper_rad'], a['home_rad'])):
             raise ValueError('Invalid joint limits or home pose')
+        a['ik_preferred_posture_rad']=vector(a.get('ik_preferred_posture_rad',a['home_rad']),6)
+        if any(not lo<=q<=hi for lo,q,hi in zip(a['lower_rad'],a['ik_preferred_posture_rad'],a['upper_rad'])):
+            raise ValueError('IK preferred posture must be within joint limits')
         if not 0 <= a['initial_gripper'] <= 1:
             raise ValueError('Invalid initial gripper')
         if not 0 < a['finger_open_m']-a['finger_closed_m'] <= .041:
@@ -139,7 +147,8 @@ class Guard:
             if not 0 <= now-msg['issued'] <= TTL:
                 raise ValueError('Expired command')
             q = vector(msg['q'])
-            gripper_active=msg.get('gripper_active',False) and msg.get('mode')=='teleop'
+            gripper_active=msg.get('gripper_active',False) and (msg.get('mode')=='teleop' or
+                self.sequence and msg.get('mode')=='release')
             if not 0<=q[6]<=1:raise ValueError('Gripper target outside calibrated aperture')
             previous_goal=self.goal[:]
             if msg.get('freeze'):
@@ -193,6 +202,10 @@ def validate_sequence(profile, sides=SIDES, live=False):
     """Named poses must be explicit; never substitute home for a missing sleep."""
     for side in sides:
         arm = profile['arms'][side]
+        if 'opening_gripper' in arm:
+            aperture=arm['opening_gripper']
+            if isinstance(aperture,bool) or not isinstance(aperture,(int,float)) or not math.isfinite(aperture) or not 0<=aperture<=1:
+                raise ValueError(f'{side}: opening_gripper must be a finite aperture in [0, 1]')
         for name in ('opening_rad', 'sleep_rad'):
             if name not in arm:
                 raise ValueError(f'{side}: sequence requires configured {name}')
@@ -216,8 +229,9 @@ class SettlingWindow:
     The window bounds total excursion, not each adjacent step, so continuous
     drift cannot accumulate unnoticed. Targets and feedback gaps reset it.
     """
-    def __init__(self, arm_error=math.radians(.5)):
+    def __init__(self, arm_error=math.radians(.5), require_arm_arrival=True):
         self.arm_error = arm_error
+        self.require_arm_arrival = require_arm_arrival
         self.samples = []
         self.target = None
 
@@ -237,5 +251,6 @@ class SettlingWindow:
         tolerance = [2*2*math.pi/4096+1e-9]*6+[.02]
         return all(max(row[1][j] for row in self.samples)-min(row[1][j] for row in self.samples) <= tolerance[j]
                    for j in range(7)) and all(
+            (j<6 and not self.require_arm_arrival) or
             abs(row[1][j]-target[j]) <= (self.arm_error if j<6 else .02)
             for row in self.samples for j in range(7))

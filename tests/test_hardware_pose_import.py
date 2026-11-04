@@ -47,6 +47,7 @@ def test_import_by_joint_name_roundtrips_updated_mapping_and_preserves_input(tmp
                 assert math.degrees(q)*sign+offset == pytest.approx(source['calibrated_degrees'][name])
         assert not arm['sequence_verified']
         assert arm['initial_gripper']==original['arms'][side]['initial_gripper']
+        assert arm['opening_gripper']==pytest.approx(.73)
 
 
 @pytest.mark.parametrize('fault', ['duplicate','missing','disagreement','nonfinite','robot'])

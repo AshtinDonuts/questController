@@ -35,6 +35,9 @@ class MockBus:
         if getattr(self,'torque_release_attempted',False):raise RuntimeError('Sleep torque is disabled')
         self.goal = q[:]
         self.writes.append(q[:])
+        if getattr(self, 'record_actions', False):
+            self.confirmed_action = dict(qpos=q[:], raw_goal=None, confirmed=True,
+                                         confirmed_ns=time.monotonic_ns(), mock=True)
 
     def startup_hold(self, cancelled=lambda: False, *, ignore_model_limits=False):
         if not self.startup_allowed or self.startup_attempted:
@@ -211,13 +214,19 @@ class LeRobotBus:
         lo,hi=sorted((calibration['closed_raw'],calibration['open_raw']))
         return int(min(hi,max(lo,raw)))
 
-    def write_raw_hold(self, raw):
-        """Preload current counts with shared primary/shadow goals (<=2 ticks apart)."""
+    def write_raw_hold(self, raw, *, powered=False):
+        """Capture shared goals; allow only bounded loaded-pair deflection.
+
+        Torque-off pairs must align within two ticks before enabling. Already
+        powered pairs can deflect under load; use the existing six-tick startup
+        hold tolerance without cycling torque or relaxing calibrated coupling.
+        """
         raw = raw.copy()
         raw[-1]=self.bounded_gripper_raw(raw[-1],startup=True)
+        tolerance=6 if powered else 2
         for primary, shadow in ((1,2),(3,4)):
-            if abs(int(raw[primary])-int(raw[shadow]))>2:
-                raise ValueError('Raw primary/shadow positions differ by more than 2 ticks')
+            if abs(int(raw[primary])-int(raw[shadow]))>tolerance:
+                raise ValueError(f'Raw primary/shadow positions differ by more than {tolerance} ticks')
             raw[shadow]=raw[primary]
         writer = self.dxl.GroupSyncWrite(self.bus.port_handler,self.bus.packet_handler,116,4)
         for name,value in zip(MOTORS,raw):
@@ -240,8 +249,12 @@ class LeRobotBus:
         self.startup_attempted=True
         enabled=False
         safe_to_hold=False
+        powered=False
+        def hold_raw(raw):
+            self.write_raw_hold(raw, powered=powered)
         try:
             self.preflight=self.inspect()
+            powered=self.preflight['Torque_Enable']==[1]*9
             before=self.read_raw()
             q,_=self.decode(before)
             if (getattr(self,'gripper_feedback',None) or {}).get('state')=='out_of_range':
@@ -249,14 +262,16 @@ class LeRobotBus:
             if not ignore_model_limits and any(not lo<=v<=hi for v,lo,hi in zip(q[:6],self.cfg['lower_rad'],self.cfg['upper_rad'])):
                 raise ValueError('Startup pose outside configured joint limits')
             safe_to_hold=True
-            self.write_raw_hold(before)
+            hold_raw(before)
             self.configure_motion_caps()
             # Watchdog is armed before torque-on, covering a process/USB failure in that window.
             self.watchdog()
             current=self.read_raw()
-            if self.np.max(self.np.abs(current.astype('int64')-before))>2:
+            # A loaded shadow may settle toward its shared primary goal after
+            # capture. Keep that correction inside the same startup bound.
+            if self.np.max(self.np.abs(current.astype('int64')-before))>(6 if powered else 2):
                 raise RuntimeError('Arm moved during startup; support it stationary and retry explicitly')
-            self.write_raw_hold(current)
+            hold_raw(current)
             if cancelled():
                 raise RuntimeError('Startup cancelled before torque enable')
             if self.preflight['Torque_Enable']==[0]*9:
@@ -264,7 +279,7 @@ class LeRobotBus:
                 enabled=True  # A communication error may still have enabled some motors.
                 self.bus.write('Torque_Enable',1)
             after=self.read_raw()
-            self.write_raw_hold(after)
+            hold_raw(after)
             delta=after.astype('int64')-current
             if self.np.max(self.np.abs(delta))>6:
                 raise RuntimeError('Encoder reset or unexpected motion on torque enable; raw hold latched')
@@ -290,7 +305,7 @@ class LeRobotBus:
             # Freeze actual raw counts once; never retry enable or disable torque.
             try:
                 if safe_to_hold:
-                    self.write_raw_hold(self.read_raw())
+                    hold_raw(self.read_raw())
             except Exception:
                 pass
             self.startup_report=dict(verified=False,torque_enable_attempted=enabled,hold_confirmed=False)
@@ -328,6 +343,13 @@ class LeRobotBus:
         if not self.np.array_equal(actual, raw):
             raise ConnectionError('Goal-position readback mismatch')
         self._last_written_raw=raw.copy()
+        if getattr(self, 'record_actions', False):
+            values = self.bus.apply_calibration(actual.copy(), self.command_names)
+            model_goal = [math.radians((float(values[i])-self.cfg['offset_deg'][i])/self.cfg['sign'][i])
+                          for i in range(6)]
+            model_goal.append(feedback_aperture(int(actual[-1]), self.gripper_calibration)[0])
+            self.confirmed_action = dict(qpos=model_goal, raw_goal=actual.tolist(), confirmed=True,
+                                         confirmed_ns=time.monotonic_ns(), mock=False)
         return True
 
     def opening_speed(self, enabled, counts=24, acceleration_counts=None):

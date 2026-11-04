@@ -104,7 +104,7 @@ Y homes both arms; A runs the home/start/save sequence for a shared episode; B d
 the shared episode and cancels homing. Losing either hand discards an active episode marker.
 Right-stick click shows both EEF orientations. MP4 contains both arms and their EEF axes;
 telemetry has `arms.left` and `arms.right`, while the legacy top-level pose fields remain right-arm data.
-The base centers are 81.5 cm apart, shoulder to shoulder and both facing forward (+Y), matching the user measurement reported on 2026-10-27. The horizontal origin is midway between them: left X=-0.4075 m, right X=+0.4075 m, both Y=0. Each workspace is translated to its own base. The existing model base Z=0.02 m above the table is retained.
+The base centers are 64 cm apart, shoulder to shoulder and both facing forward (+Y), matching the user measurement reported on 2026-10-27. The horizontal origin is midway between them: left X=-0.32 m, right X=+0.32 m, both Y=0. Each workspace is translated to its own base. The existing model base Z=0.02 m above the table is retained.
 New session manifests record `base_positions`. Exact-target IK replay restores the source recording's placement; recordings/fixtures predating that metadata retain the original 64 cm dual layout (or their original single-arm placement), rather than being silently retargeted to the current mounting geometry.
 The kinematic IK enforces base-fixed planar boundaries and the table plane; it does not enforce inter-arm collision avoidance.
 
@@ -219,3 +219,17 @@ Dynamixel interface. It adds independent motor watchdogs, latched powered hold,
 and exclusive slow Quest-Y homing. The example hardware profile is deliberately
 unverified; physical commissioning is required before live motion. The simulator
 command documented above does not open physical motor ports.
+
+### Headset workspace visibility
+
+In Meta Quest Browser, choose **Enter passthrough** to see the real workspace
+with controller overlays and the recording HUD. The primary button requests
+`immersive-ar` through the bundled A-Frame `enterAR()` API. The scene uses an
+alpha-enabled renderer without a sky/background mesh. An explicit **Enter VR
+(hides the room)** option requests `immersive-vr`; passthrough failures never
+fall back to VR automatically. Both modes retain the existing reference-reset
+and tracking-loss handling. Headset passthrough is not a recorded camera stream.
+
+The [WebXR AR specification](https://www.w3.org/TR/webxr-ar-module-1/) defines
+`immersive-ar` as blending the rendered content with the real-world environment.
+On-device visibility and permissions still require verification in the headset.

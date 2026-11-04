@@ -38,7 +38,9 @@ def test_home_ignores_controllers_and_freezes_grippers(monkeypatch):
 
 
 def test_home_path_rejected_before_movement(monkeypatch):
-    p,q,h=setup(); p['arms']['left']['home_rad'][0]=8
+    p,q,h=setup()
+    p['arms']['left']['ik_preferred_posture_rad']=p['arms']['left']['home_rad'][:]
+    p['arms']['left']['home_rad'][0]=8
     planner=Planner(p,q)
     monkeypatch.setattr('webxr_teleop.hardware.planner.time.monotonic',lambda:0.)
     with pytest.raises(ValueError,match='Whole home path'):
@@ -164,6 +166,7 @@ def test_lag_pauses_command_lead_and_resumes_without_reset(monkeypatch):
     stalled=np.array(results[-1]['q']['left'])
     for i in range(251,301):
         clock[0]=i*.02;q=result['q']
+        h['left']['position'][1]+=.001  # Resumption requires fresh hand motion.
         result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='teleop',measured=q,hands=h))
     assert np.max(abs(np.array(result['q']['left'])-stalled))>1e-3
     h['left']['grip']=False;clock[0]+=.02
@@ -218,7 +221,7 @@ def test_default_teleop_uses_latest_target_without_catchup_pause(monkeypatch):
     h['left']['grip']=True
     for i in range(1,151):
         clock[0]=i*.02
-        if i==2:h['left']['position'][1]+=.08
+        if i>=2:h['left']['position'][1]+=.0006
         result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='teleop',measured=q,hands=h))
         diagnostic=result['diagnostics']['left']
         assert 'catching_up' not in diagnostic

@@ -2,16 +2,18 @@
 import math
 from pathlib import Path
 import socket
+import signal
 import time
 import numpy as np
 import mujoco
 from scipy.spatial.transform import Rotation
 from ..mink_ik import MinkIK
 from ..planar_limits import PlanarBounds
-from .core import SIDES, JOINTS, HomeTrajectory, PERIOD, TTL, SettlingWindow, teleop_scales
+from .core import SIDES, JOINTS, HomeTrajectory, PERIOD, TTL, SettlingWindow, teleop_scales, IK_POSTURE_COST, IK_DAMPING_COST
 from .ipc import send, receive
 from .motion import motion_settings
 from .gripper import aperture_from_trigger, shape_aperture, gripper_speed, gripper_acceleration
+from .tracking import PoseDeadband, PoseMotionGate, tracking_deadbands
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -52,6 +54,7 @@ class Planner:
     def __init__(self, profile, measured, sides=SIDES):
         self.profile = profile
         self.translation_scale,self.rotation_scale=teleop_scales(profile)
+        self.tracking_position_deadband,self.tracking_rotation_deadband=tracking_deadbands(profile)
         self.gripper_speed=gripper_speed(profile)
         self.gripper_acceleration=gripper_acceleration(profile)
         self.catch_up = profile.get('teleop_catch_up',False)
@@ -68,6 +71,9 @@ class Planner:
             self.sites[side] = self.model.site(side+'/gripper').id
             self.iks[side] = MinkIK(self.model,self.data,joints,self.sites[side],
                 joint_speed=math.radians(self.joint_speed),joint_acceleration=math.radians(self.joint_acceleration),
+                preferred_posture=profile['arms'][side].get('ik_preferred_posture_rad',profile['arms'][side]['home_rad']),
+                preferred_posture_cost=profile.get('ik_preferred_posture_cost',IK_POSTURE_COST),
+                joint_damping_cost=profile.get('ik_joint_damping_cost',IK_DAMPING_COST),
                 planar_bounds=PlanarBounds(**profile['planes']))
         self.epoch = -1
         self.basis = None
@@ -96,7 +102,7 @@ class Planner:
     def align(self, quaternion):
         f = Rotation.from_quat(quaternion).apply([0,0,-1]); f[1]=0
         if np.linalg.norm(f) < .2:
-            raise ValueError('Point right controller horizontally forward to align')
+            raise ValueError('Point the active alignment controller horizontally forward to align')
         f /= np.linalg.norm(f); up=np.array([0.,1.,0.])
         self.basis=np.stack([np.cross(f,up),f,up])
 
@@ -114,6 +120,10 @@ class Planner:
             self.last={s:np.array(measured[s]) for s in self.sides}
             self.velocity={s:np.zeros(7) for s in self.sides}; self.last_time=None
             self.frozen={s:True for s in self.sides}
+            # Release commands only the gripper. Arm joints must stop moving,
+            # but are not executing a pose-arrival trajectory. Motor hold/drift
+            # guards retain authority over their fixed goals.
+            self.release_arrival={s:SettlingWindow(require_arm_arrival=False) for s in self.sides}
         dt=PERIOD if self.last_time is None else now-self.last_time
         # Initialization or scheduling jitter can put consecutive fresh jobs
         # less than 5 ms apart. A short positive interval is not a missed
@@ -130,7 +140,7 @@ class Planner:
             for s in self.sides:end[self.qids[s]]=self.profile['arms'][s]['opening_rad']
             if not self.valid_path(start,end):raise ValueError('Restart path violates joint/planar limits')
         if mode=='align':
-            self.align(hands['right']['quaternion'])
+            self.align(hands[self.sides[0] if len(self.sides)==1 else 'right']['quaternion'])
         targets={s:np.array(measured[s]) for s in self.sides}
         diagnostics={}
         home_done=False
@@ -152,7 +162,7 @@ class Planner:
                 self.origin={}; self.settled_since=None
                 # Operator-requested restart arrival tolerance; sustained
                 # stationary feedback is still required before handoff.
-                arrival_deg=(5 if restarting else 2) if mode=='opening' else .5
+                arrival_deg=(5 if restarting and not (job.get('episode_return') or job.get('strict_opening')) else 2) if mode=='opening' else .5
                 self.arrival={s:SettlingWindow(arm_error=math.radians(arrival_deg)) for s in self.sides}
                 self.last={s:np.array(measured[s]) for s in self.sides}
                 self.velocity={s:np.zeros(7) for s in self.sides}
@@ -162,14 +172,26 @@ class Planner:
             t=elapsed*time_scale
             q=self.home.at(t)
             for i,s in enumerate(self.sides):
-                targets[s]=np.array(q[i*6:i*6+6]+[self.home_grippers[s]])
+                aperture=self.home_grippers[s]
+                if mode=='opening' and job.get('recording_sequence'):
+                    aperture,_=shape_aperture(self.last[s][6],self.velocity[s][6],
+                        self.profile['arms'][s]['opening_gripper'],dt,
+                        speed_limit=self.gripper_speed,acceleration_limit=self.gripper_acceleration)
+                targets[s]=np.array(q[i*6:i*6+6]+[aperture])
             if t >= self.home.duration:
                 checks=[self.arrival[s].update(measured[s],targets[s].tolist(),now) for s in self.sides]
-                home_done=all(checks)
+                home_done=all(checks) and (mode!='opening' or not job.get('recording_sequence') or
+                    all(abs(measured[s][6]-self.profile['arms'][s]['opening_gripper'])<.01 and
+                        abs(targets[s][6]-self.profile['arms'][s]['opening_gripper'])<1e-6 for s in self.sides))
                 # Opening's wall-clock handoff is owned by the supervisor.
                 if (mode!='opening' or restarting) and elapsed > self.home.duration/time_scale+3 and not home_done:
                     error=max(abs(x-y) for s in self.sides for x,y in zip(measured[s][:6],targets[s][:6]))
                     raise ValueError(f'{mode.capitalize()} settling timed out; maximum joint error {math.degrees(error):.2f} degrees')
+        elif mode=='release':
+            self.origin={}
+            freeze={s:True for s in self.sides}
+            checks=[self.release_arrival[s].update(measured[s],self.last[s][:6].tolist()+[1.],now) for s in self.sides]
+            home_done=all(checks) and all(abs(measured[s][6]-1.)<.01 and abs(self.last[s][6]-1.)<1e-6 for s in self.sides)
         elif mode=='teleop':
             if self.basis is None:
                 raise ValueError('Alignment required')
@@ -188,6 +210,8 @@ class Planner:
                 if s not in self.origin:
                     self.origin[s]=dict(hand=p,rotation=r,p=self.data.site_xpos[site].copy(),
                         r=self.data.site_xmat[site].reshape(3,3).copy(),last_hand=p,
+                        tracking=PoseDeadband(p,r,self.tracking_position_deadband,self.tracking_rotation_deadband),
+                        motion=PoseMotionGate(p,r,now), stopped=False,
                         target_p=self.data.site_xpos[site].copy(),
                         target_r=self.data.site_xmat[site].reshape(3,3).copy())
                     # A new grip also resets joint integration to current feedback.
@@ -197,6 +221,9 @@ class Planner:
                 if np.linalg.norm(p-o['last_hand']) > .12:
                     raise ValueError('Controller tracking jump')
                 o['last_hand']=p
+                p,r=o['tracking'].update(p,r)
+                moving=o['motion'].moving(p,r,now)
+                if moving:o['stopped']=False
                 desired_p=o['p']+self.translation_scale*(self.basis@(p-o['hand']))
                 delta_r=self.basis@r@o['rotation'].T@self.basis.T
                 desired_r=Rotation.from_rotvec(Rotation.from_matrix(delta_r).as_rotvec()*self.rotation_scale).as_matrix()@o['r']
@@ -215,10 +242,23 @@ class Planner:
                 # the archived bounded-lead option remains disabled by default.
                 self.data.qpos[self.qids[s]]=self.last[s][:6]
                 mujoco.mj_forward(self.model,self.data)
-                result=self.iks[s].advance(self.data,o['target_p'],o['target_r'],dt)
+                solved_target_p=o['target_p'].copy()
+                result=self.iks[s].advance(self.data,o['target_p'],o['target_r'],dt,stopping=not moving)
                 if not result.accepted:
                     raise ValueError('IK rejected target: '+result.reason)
-                diagnostics[s]=dict(desired_position=desired_p.tolist(),filtered_position=o['target_p'].tolist(),
+                if not moving and not o['stopped'] and result.joint_speed<1e-8:
+                    # Discard the unexecuted pose error after braking. Future
+                    # hand deltas start here rather than reviving a backlog.
+                    actual_p=self.data.site_xpos[site].copy()
+                    actual_r=self.data.site_xmat[site].reshape(3,3).copy()
+                    o['p']+=actual_p-desired_p
+                    scaled_delta=Rotation.from_rotvec(Rotation.from_matrix(delta_r).as_rotvec()*self.rotation_scale).as_matrix()
+                    o['r']=scaled_delta.T@actual_r
+                    o['target_p']=actual_p; o['target_r']=actual_r
+                    self.iks[s].set_reference(self.data.qpos)
+                    o['stopped']=True
+                diagnostics[s]=dict(desired_position=desired_p.tolist(),filtered_position=solved_target_p.tolist(),
+                    controller_stationary=not moving, stationary_hold=o['stopped'],
                     ik_position_error_m=result.position_error,ik_rotation_error_rad=result.rotation_error,
                     plane_limited=result.plane_limited,alignment_basis=self.basis.tolist(),
                     desired_quaternion_xyzw=Rotation.from_matrix(desired_r).as_quat().tolist(),
@@ -241,7 +281,12 @@ class Planner:
                 diagnostics.setdefault(s,{})['desired_aperture']=aperture_from_trigger(hands[s]['trigger'])
             elif freeze[s]:
                 targets[s]=self.last[s].copy() if self.frozen[s] else np.array(measured[s])
-                self.velocity[s]=np.zeros(7)
+                if mode=='release':self.velocity[s][:6]=0
+                else:self.velocity[s]=np.zeros(7)
+            if mode=='release':
+                targets[s][6],self.velocity[s][6]=shape_aperture(
+                    self.last[s][6],self.velocity[s][6],1.,dt,
+                    speed_limit=self.gripper_speed,acceleration_limit=self.gripper_acceleration)
             if self.catch_up and mode=='teleop' and not freeze[s]:
                 # Pause command advancement at a bounded lead rather than
                 # disarming or continually moving the goal away from the motor.
@@ -269,7 +314,7 @@ class Planner:
         for s in self.sides:
             diagnostics.setdefault(s,{}).update(requested_joint_velocity_rad_s=self.velocity[s][:6].tolist(),
                 measured_eef_from_encoders=measured_eef[s])
-        return dict(gripper_active=mode=='teleop',grip_generation=job.get('grip_generation',{}),
+        return dict(gripper_active=mode in ('teleop','release'),grip_generation=job.get('grip_generation',{}),
                     controller_t={s:(hands[s].get('t') if hands.get(s) else None) for s in self.sides},
                     diagnostics=diagnostics,seq=job['seq'],q={s:targets[s].tolist() for s in self.sides},freeze=freeze,issued=now,
                     input_t=job['t'],epoch=job['epoch'],mode=mode,home_done=home_done,
@@ -277,6 +322,7 @@ class Planner:
 
 
 def run(sock, profile, sides=SIDES):
+    signal.signal(signal.SIGINT,signal.SIG_IGN)  # Supervisor owns terminal exit and sleep.
     planner=None
     try:
         while True:

@@ -1,0 +1,6 @@
+# Install in a separate Python 3.12+ venv, never the motor-driver environment.
+--extra-index-url https://download.pytorch.org/whl/cpu
+lerobot[dataset]==0.6.1
+h5py==3.16.0
+torch==2.11.0+cpu
+torchvision==0.26.0+cpu

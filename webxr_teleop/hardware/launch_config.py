@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 
 
-PATH_OPTIONS={'profile','output','lerobot_python','socket'}
+PATH_OPTIONS={'profile','output','lerobot_python','socket','recording_config','recording_python'}
 
 
 def configured_argv(parser,argv):
@@ -28,6 +28,9 @@ def configured_argv(parser,argv):
         boolean=isinstance(action,(argparse._StoreTrueAction,argparse.BooleanOptionalAction))
         if boolean:
             if not isinstance(value,bool):parser.error(f'{key} must be a JSON boolean')
+            # The viewer is a per-launch operator choice. Keep accepting old
+            # presets, but only an explicit CLI --twin may open its window.
+            if key=='twin':continue
             if value:defaults.append(option)
             elif isinstance(action,argparse.BooleanOptionalAction):defaults.append('--no-'+option[2:])
             continue

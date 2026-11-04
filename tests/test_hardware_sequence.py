@@ -54,6 +54,57 @@ def test_invalid_sleep_path_rejected_before_first_target(monkeypatch):
         planner.step(dict(t=0.,seq=1,epoch=1,mode='sleep',home_id=1,measured=q,hands={}))
 
 
+def test_episode_release_opens_grippers_with_arm_joints_frozen(monkeypatch):
+    from webxr_teleop.hardware.core import Guard
+    p,q,_=setup()
+    original=copy.deepcopy(q)
+    planner=Planner(p,q)
+    guards={s:Guard(p['arms'][s]['lower_rad'],p['arms'][s]['upper_rad'],sequence=True) for s in q}
+    for s,g in guards.items():g.arm(q[s],1)
+    clock=[0.]
+    monkeypatch.setattr('webxr_teleop.hardware.planner.time.monotonic',lambda:clock[0])
+    for i in range(180):
+        clock[0]=i*.02
+        result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='release',measured=q,hands={}))
+        for s,g in guards.items():
+            previous=q[s][6]
+            q[s]=g.command(dict(epoch=1,seq=i,issued=clock[0],q=result['q'][s],
+                freeze=True,gripper_active=True,mode='release'),q[s],clock[0])
+            assert g.state=='ARMED',g.reason
+            assert q[s][:6]==original[s][:6]
+            assert 0<=q[s][6]-previous<=p.get('gripper_speed',.18)*.02+1e-6
+    assert result['home_done']
+    assert all(abs(row[6]-1)<.01 for row in q.values())
+
+
+def test_recording_opening_restores_ceremony_aperture(monkeypatch):
+    p,q,_=setup()
+    for s in q:
+        p['arms'][s]['opening_gripper']=.4
+        q[s][6]=1.
+    planner=Planner(p,q)
+    clock=[0.]
+    monkeypatch.setattr('webxr_teleop.hardware.planner.time.monotonic',lambda:clock[0])
+    for i in range(300):
+        clock[0]=i*.02
+        result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='opening',home_id=1,
+            recording_sequence=True,measured=q,hands={}))
+        q=result['q']
+    assert result['home_done']
+    assert all(abs(row[6]-.4)<.01 for row in q.values())
+
+
+@pytest.mark.parametrize('side',['left','right'])
+def test_single_arm_alignment_uses_selected_controller(monkeypatch,side):
+    p,q,hands=setup()
+    q={side:q[side]};hands['right' if side=='left' else 'left']=None
+    planner=Planner(p,q,(side,))
+    monkeypatch.setattr('webxr_teleop.hardware.planner.time.monotonic',lambda:1.)
+    result=planner.step(dict(t=1.,seq=1,epoch=1,mode='align',measured=q,hands=hands))
+    assert result['mode']=='align'
+    assert planner.basis is not None
+
+
 def test_clutch_captures_feedback_once_with_following_lag():
     from webxr_teleop.hardware.core import Guard
     p,q,_=setup(); arm=p['arms']['left']; measured=q['left']
@@ -126,3 +177,24 @@ def test_automatic_worker_startup_has_no_manual_countdown(tmp_path):
         assert not any(m['type']=='fault' for m in messages)
     finally:
         send(sock,dict(op='shutdown'));proc.wait(timeout=2);sock.close()
+
+
+@pytest.mark.parametrize('condition,complete', [('settled_offset',True),('arm_drifting',False),('gripper_blocked',False)])
+def test_release_arrival_uses_aperture_and_stillness_not_arm_pose_error(monkeypatch,condition,complete):
+    p,q,_=setup()
+    for s in q:q[s][6]=.995
+    original=copy.deepcopy(q)
+    planner=Planner(p,q)
+    clock=[0.]
+    monkeypatch.setattr('webxr_teleop.hardware.planner.time.monotonic',lambda:clock[0])
+    for i in range(60):
+        clock[0]=i*.02
+        if i:
+            for s in q:
+                q[s][2]=original[s][2]+math.radians(.8)+(i*.001 if condition=='arm_drifting' else 0)
+                q[s][6]=.8 if condition=='gripper_blocked' else .995
+        result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='release',measured=q,hands={}))
+        for s in q:
+            assert result['q'][s][:6]==original[s][:6]
+            assert result['freeze'][s]
+    assert result['home_done'] is complete

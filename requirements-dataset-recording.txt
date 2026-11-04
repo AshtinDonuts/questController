@@ -1,0 +1,6 @@
+# Existing LeRobot Python 3.10 environment; separate from quest_ros supervisor.
+numpy==1.26.4
+h5py==3.16.0
+pyrealsense2==2.58.4.10922
+opencv-python==4.10.0.84
+rerun-sdk==0.16.0

@@ -1,0 +1,14 @@
+{
+  "dataset_dir": "../../teleop_sessions/mock_dataset",
+  "task": "Move the object to the target",
+  "display_data": false,
+  "cameras": {
+    "test_front": {
+      "backend": "synthetic",
+      "width": 64,
+      "height": 48,
+      "fps": 30,
+      "streams": ["rgb", "depth"]
+    }
+  }
+}

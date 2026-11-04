@@ -57,6 +57,10 @@ def test_regular_file_not_removed(tmp_path):
     (['python','-m','webxr_teleop.hardware.worker','--mode','mock'],False),
     (['python','-m','webxr_teleop.hardware.run','--mode=mock'],False),
     (['python','-m','webxr_teleop.hardware.run','status'],False),
+    (['python','-m','webxr_teleop.hardware.run','record-start'],False),
+    (['python','-m','webxr_teleop.hardware.run','record-save'],False),
+    (['python','-m','webxr_teleop.hardware.run','record-discard'],False),
+    (['python','-m','webxr_teleop.hardware.run','record-next'],False),
     (['python','-c','print(1)','-m','webxr_teleop.hardware.run'],False),
 ])
 def test_process_detection_distinguishes_wrappers_and_mock(args,expected):
