@@ -112,7 +112,11 @@ class Camera:
             pipeline.stop()
 
     def healthy(self, now_ns):
-        return not self.error and all(0 <= now_ns-self.latest.get(s, 0) < self.config['max_gap_s']*1e9
+        # Acquisition runs concurrently. Snapshot before reading the clock:
+        # a fresh frame may be newer than the recorder's loop timestamp.
+        latest = self.latest.copy()
+        now_ns = max(now_ns, time.monotonic_ns())
+        return not self.error and all(s in latest and 0 <= now_ns-latest[s] < self.config['max_gap_s']*1e9
                                       for s in self.config['streams'])
 
     def close(self):

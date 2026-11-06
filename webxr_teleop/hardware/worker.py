@@ -12,6 +12,8 @@ from .ipc import send, receive
 from .motion import motion_settings, latest_motion_messages, controller_source_fresh, ClutchBarrier
 from .gripper import gripper_speed, gripper_acceleration
 
+HOLD_DRIFT_RAD = math.radians(5)
+
 
 def complete_sleep(bus, guard, message, q, cfg, motion_mode, now, sequence):
     """Release only a fresh, current sleep completion at the measured sleep pose."""
@@ -227,7 +229,7 @@ def main():
             last_target=target[:];previous_goal=target[:]
             speed=max(abs(a-b) for a,b in zip(q[:6],previous_q[:6]))/max(fresh-previous_t,1e-6)
             settled=speed < .00873 and max(abs(a-b) for a,b in zip(q[:6],target[:6])) < .00873 and abs(q[6]-target[6])<.02
-            if guard.state=='HOLD' and (max(abs(a-b) for a,b in zip(q[:6],target[:6])) > .0174533 or abs(q[6]-target[6]) > .02):
+            if guard.state=='HOLD' and (max(abs(a-b) for a,b in zip(q[:6],target[:6])) > HOLD_DRIFT_RAD or abs(q[6]-target[6]) > .02):
                 drift_since=fresh if drift_since is None else drift_since
                 if fresh-drift_since>.5 and not drift_fault:
                     drift_fault=True

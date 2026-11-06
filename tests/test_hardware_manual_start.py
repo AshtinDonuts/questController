@@ -1,6 +1,7 @@
 """Software hold commissioning tests; no physical motor access."""
 import hashlib
 import json
+import math
 import sys
 import time
 from types import SimpleNamespace
@@ -67,7 +68,13 @@ def test_manual_countdown_delays_torque_and_can_cancel(cancel):
         sock.close()
 
 
-def test_hold_drift_fault_keeps_original_target_and_rejects_reset():
+@pytest.mark.parametrize('joint_drift,gripper_drift,expect_fault',[
+    (math.radians(2.8),0.,False),
+    (math.radians(4.9),0.,False),
+    (math.radians(5.1),0.,True),
+    (0.,.03,True),
+])
+def test_hold_drift_fault_keeps_original_target_and_rejects_reset(joint_drift,gripper_drift,expect_fault):
     import os
     import subprocess
     from webxr_teleop.hardware.ipc import pair
@@ -77,23 +84,31 @@ from webxr_teleop.hardware import worker
 class DriftingBus(worker.MockBus):
     def read(self, **kwargs):
         q,health=super().read(**kwargs)
-        if self.writes:q[0]+=.04
+        if self.writes:
+            q[0]+=JOINT_DRIFT
+            q[6]+=GRIPPER_DRIFT
         return q,health
 worker.MockBus=DriftingBus
 worker.main()
-'''
+'''.replace('JOINT_DRIFT',repr(joint_drift)).replace('GRIPPER_DRIFT',repr(gripper_drift))
     proc=subprocess.Popen([sys.executable,'-c',script,'--profile',str(DEFAULT_PROFILE),
         '--side','left','--mode','mock','--fd',str(child.fileno()),'--parent-pid',str(os.getpid())],pass_fds=[child.fileno()])
     child.close();messages=[]
     try:
-        deadline=time.monotonic()+3
+        deadline=time.monotonic()+(3 if expect_fault else 1.2)
         while time.monotonic()<deadline:
             messages+=receive(parent)
             if any(m['type']=='fault' for m in messages):break
             time.sleep(.02)
+        original=next(m for m in messages if m['type']=='feedback')['goal']
+        if not expect_fault:
+            assert not [m for m in messages if m['type']=='fault']
+            feedback=[m for m in messages if m['type']=='feedback']
+            assert feedback[-1]['t']-feedback[0]['t']>.5
+            assert all(m['state']=='HOLD' and m['goal']==original for m in feedback)
+            return
         fault=next(m for m in messages if m['type']=='fault')
         assert 'Hold drift' in fault['reason'] and not fault['hold_confirmed']
-        original=next(m for m in messages if m['type']=='feedback')['goal']
         send(parent,dict(op='arm',epoch=10,issued=time.monotonic()))
         time.sleep(.1)
         feedback=[m for m in receive(parent) if m['type']=='feedback']

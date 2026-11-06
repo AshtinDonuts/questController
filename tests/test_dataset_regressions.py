@@ -18,7 +18,15 @@ def recorder_child(control,data,root,scenario,pause,parent):
     cfg=dict(dataset_dir=str(root),task='review',display_data=False,queue_frames=8,
              flush_interval_s=1,cameras={'front':dict(backend='synthetic',width=8,height=8,
              fps=30,streams=['rgb'],max_gap_s=.2)})
-    if scenario=='slow_finish':
+    if scenario=='telemetry_burst':
+        cfg['queue_frames']=4
+        cfg['cameras']={name:dict(cfg['cameras']['front']) for name in ('left','right','top')}
+        original=Episode.robot
+        def slow_robot(self,*args,**kwargs):
+            time.sleep(.004)
+            return original(self,*args,**kwargs)
+        Episode.robot=slow_robot
+    elif scenario=='slow_finish':
         original=Episode.finish
         def slow(self,*args,**kwargs):
             time.sleep(.6)
@@ -105,6 +113,31 @@ def test_stale_camera_start_can_retry(tmp_path):
         send(control,dict(op='start',request_id='retry',start_ns=time.monotonic_ns(),through_seq=0))
         wait_status(control,lambda s:s['phase']=='recording')
         assert proc.is_alive()
+    finally:cleanup(proc,control,data)
+
+
+def test_telemetry_burst_does_not_starve_three_cameras(tmp_path):
+    proc,control,data,pause=start_child(tmp_path,'telemetry_burst')
+    try:
+        send(control,dict(op='start',request_id='start',start_ns=time.monotonic_ns(),through_seq=0))
+        wait_status(control,lambda s:s['phase']=='recording')
+        for seq in range(1,65):
+            row=dict(t=time.monotonic(),seq=seq,epoch=1,q=[0.]*7)
+            assert send(data,dict(seq=seq,kind='robot',side='left',value=row))
+        deadline=time.monotonic()+.8
+        while time.monotonic()<deadline:
+            for status in receive(control):
+                assert status['error'] is None
+                assert status['phase']=='recording'
+            time.sleep(.005)
+        assert proc.is_alive()
+        send(control,dict(op='finish',request_id='abort',status='aborted',
+                          end_ns=time.monotonic_ns(),through_seq=64))
+        wait_status(control,lambda s:s['phase']=='finished')
+        import h5py
+        with h5py.File(next((tmp_path/'aborted').glob('*.hdf5')),'r') as f:
+            assert len(f['streams/robot/left/observations/t_ns'])==64
+            assert set(f['streams/cameras'])=={'left','right','top'}
     finally:cleanup(proc,control,data)
 
 

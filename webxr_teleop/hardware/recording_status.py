@@ -24,6 +24,8 @@ def recording_status(config, recorder, *, state, reason, now_ns, aligned=False,
         stage,title,hint='releasing','OPENING GRIPPERS','Arm joints held. Wait for full aperture and settling.'
     elif returning and state in ('RESTART_PREPARING','OPENING'):
         stage,title,hint='returning','RETURNING TO OPENING','Wait for arrival; then release grips and press X to align.'
+    elif phase in ('pausing','paused','resuming'):
+        stage,title,hint='paused','RECORDING PAUSED','Restore tracking, release grips and press X to align and resume this episode.'
     elif state=='READY' and not prepared:
         stage,title,hint='hold','OPENING INCOMPLETE','Release grips. X: align here, then → to record; ↑: optional return to opening.'
     elif state in ('DISARMED','OPENING','RESTART_PREPARING'):
@@ -33,7 +35,7 @@ def recording_status(config, recorder, *, state, reason, now_ns, aligned=False,
         title={'warming':'CAMERA WARMUP','starting':'STARTING EPISODE','saving':'SAVING EPISODE'}[phase]
         hint='Wait for REC before moving.' if phase!='saving' else 'File finalizing. Arm joints held.'
     elif phase=='recording' and state=='ARMED':
-        stage,title,hint='recording','RECORDING','A / →: save | ←: discard | B / Space: STOP'
+        stage,title,hint='recording','RECORDING','A / →: save | B / ←: discard + return | Space: STOP'
     elif complete:
         stage,title,hint='complete','COLLECTION COMPLETE','Esc: sleep and exit | S / hold Y: sleep'
     elif aligned and state=='ARMED':
@@ -48,7 +50,8 @@ def recording_status(config, recorder, *, state, reason, now_ns, aligned=False,
         stage,title,hint='hold','POWERED HOLD','Motion held. Follow the status message before resuming.'
     start=recorder.get('start_ns')
     end=recorder.get('end_ns',now_ns)
-    elapsed=max(0,(min(now_ns,end)-start)/1e9) if start is not None else 0
+    boundary=min(now_ns,end,recorder.get('pause_ns',now_ns))
+    elapsed=max(0,(boundary-start-recorder.get('paused_ns',0))/1e9) if start is not None else 0
     duration=config.get('episode_time_s',0)
     timing=f'{clock(elapsed)} / {clock(duration)}' if duration else f'{clock(elapsed)} (manual)'
     if duration and phase=='recording':timing+=f' · {clock(max(0,duration-elapsed))} left'
@@ -76,3 +79,12 @@ def status_markdown(status):
             f'{status["message"]}\n\n'
             f'Capture: {status["recorder_phase"]} · {cameras}\n\n'
             f'{status.get("recording_error") or status.get("recording_result") or ""}')
+
+
+def recording_toggle_command(phase, *, aligned, state, prepared):
+    """A saves an active episode, starts aligned capture, or prepares a return."""
+    if phase in ('recording','paused'):
+        return 'record-save'
+    if phase == 'finished' and not prepared and not (aligned and state == 'ARMED'):
+        return 'record-next'
+    return 'record-start'

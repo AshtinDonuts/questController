@@ -59,7 +59,9 @@ def run(config, metadata, control, data, parent_pid):
                 raise RuntimeError('Required camera stream became stale')
             # Drain telemetry before processing finish; through_seq closes the
             # remaining cross-channel race without waiting in the supervisor.
-            for message in receive(data):
+            # Bound disk work per turn so a telemetry burst cannot starve
+            # camera draining, control requests, or recorder heartbeats.
+            for message in receive(data, limit=8):
                 if message['seq'] != last_seq+1 and episode is not None:
                     raise RuntimeError('Recorder telemetry sequence gap')
                 last_seq = message['seq']
@@ -77,7 +79,9 @@ def run(config, metadata, control, data, parent_pid):
                 elif message['kind'] == 'event' and episode:
                     episode.event(message['event'], message['t_ns'], **message.get('details', {}))
             for name, camera in cameras.items():
-                for _ in range(config['queue_frames']*len(camera.config['streams'])):
+                # Service each camera fairly; queue capacity is not a batch
+                # size. Draining one camera completely can starve the others.
+                for _ in range(len(camera.config['streams'])):
                     try:
                         stream, frame = camera.frames.get_nowait()
                     except queue.Empty:
@@ -112,7 +116,17 @@ def run(config, metadata, control, data, parent_pid):
                     episode = Episode(root, index, request['start_ns'], snapshot)
                     state.pop('rejected',None)
                     state.pop('end_ns',None)
-                    state.update(phase='recording', episode=index, start_ns=request['start_ns'])
+                    state.pop('pause_ns',None)
+                    state.update(phase='recording', episode=index, start_ns=request['start_ns'], paused_ns=0)
+                elif op == 'pause':
+                    if episode is not None and state['phase']=='recording':
+                        episode.pause(request['pause_ns'],request.get('reason','tracking lost'))
+                        state.update(phase='paused',pause_ns=request['pause_ns'])
+                elif op == 'resume':
+                    if episode is not None and state['phase']=='paused' and healthy:
+                        episode.resume(request['resume_ns'])
+                        state['paused_ns']+=request['resume_ns']-state.pop('pause_ns')
+                        state['phase']='recording'
                 elif op == 'finish':
                     if finishing is not None:
                         # Capture already ended and commit owns the file.

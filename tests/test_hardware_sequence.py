@@ -198,3 +198,40 @@ def test_release_arrival_uses_aperture_and_stillness_not_arm_pose_error(monkeypa
             assert result['q'][s][:6]==original[s][:6]
             assert result['freeze'][s]
     assert result['home_done'] is complete
+
+
+@pytest.mark.parametrize('offset,complete', [(2.2, True), (5.5, False)])
+def test_episode_return_stationary_opening_offset(monkeypatch, offset, complete):
+    p,q,_=setup()
+    for side in q:
+        q[side]=p['arms'][side]['opening_rad'][:]+[p['arms'][side]['opening_gripper']]
+        q[side][2]+=math.radians(offset)
+    planner=Planner(p,q)
+    clock=[0.]
+    monkeypatch.setattr('webxr_teleop.hardware.planner.time.monotonic',lambda:clock[0])
+    done=False
+    try:
+        for i in range(300):
+            clock[0]=i*.02
+            result=planner.step(dict(t=clock[0],seq=i,epoch=1,mode='opening',home_id=1,
+                restart=True,episode_return=True,strict_opening=True,
+                recording_sequence=True,measured=q,hands={}))
+            if result['home_done']:
+                done=True
+                break
+    except ValueError as exc:
+        assert not complete
+        assert 'settling timed out' in str(exc)
+    assert done == complete
+
+
+@pytest.mark.parametrize('phase,aligned,state,prepared,expected', [
+    ('idle',True,'ARMED',True,'record-start'),
+    ('finished',False,'HOLD',False,'record-next'),
+    ('finished',True,'ARMED',True,'record-start'),
+    ('finished',True,'ARMED',False,'record-start'),
+    ('recording',True,'ARMED',False,'record-save'),
+])
+def test_quest_a_recording_action(phase,aligned,state,prepared,expected):
+    from webxr_teleop.hardware.recording_status import recording_toggle_command
+    assert recording_toggle_command(phase,aligned=aligned,state=state,prepared=prepared)==expected

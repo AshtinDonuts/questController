@@ -11,7 +11,7 @@ and automatically move to the opening pose. Each includes the measured-feedback
 digital twin. Omit `--twin` to hide it; the default is off.
 Only an explicit `--twin` enables it; legacy `twin` values in launch JSON are ignored.
 
-## With dataset recording
+With dataset recording
 
 Uses the existing [recording.json](recording.json): left-arm camera
 `218622270994` and top camera `218622274350`, both RGB + depth at 640×480,
@@ -93,6 +93,18 @@ again when permitted. If passthrough entry fails, the page shows the error and
 allows retry; it does not silently switch to VR. This is headset passthrough,
 not the left-arm/top camera feeds shown in Rerun.
 
+For off-head operation, keep the headset upright at chest/head height with its
+front tracking cameras facing the controllers and unobstructed. With USB debugging
+authorized, `adb shell am broadcast -a com.oculus.vrpowermanager.prox_close`
+applies Meta's [simulated headset-on setting](https://developers.meta.com/vr/documentation/native/android/ts-scriptable-testing/).
+Enter passthrough before removing the headset. Keeping the session awake does
+not guarantee controller visibility; missing or emulated positions still hold
+motion. On 2026-11-06, a motor-free USB diagnostic verified 20 seconds of valid
+tracking for both controllers off-head at about 90 packets/s, with maximum
+source age 65 ms, after placing the headset upright facing the controllers.
+Normal teleoperation uses the PC's network URL; `localhost:8443` was only the
+temporary USB-forwarded diagnostic address.
+
 ## See progress while collecting
 
 The headset shows a persistent status panel below the center of view, including
@@ -169,7 +181,7 @@ per-arm ports, calibrations, electrical current caps and base transforms.
    or terminal **X** to align.
 3. Hold each **side grip** to move its matching arm; release it to hold position.
   Each **index trigger** controls its gripper independently of the side grip.
-4. **Right B** or terminal **Space** stops both arms into powered hold. Tracking
+4. **Space** stops both arms into powered hold. **Right B** stops only without recording; while recording, **B** discards the current episode and returns to opening. Tracking
   loss also stops motion. **R**, then **left X**, resumes after a nonfault stop;
    **K** explicitly requests recovery to opening when permitted.
 5. With both grips released and arms stationary, hold **left Y for one second**
@@ -182,3 +194,6 @@ per-arm ports, calibrations, electrical current caps and base transforms.
 Optional HDF5 recording, camera configuration and arrow-key episode controls:
 [Recording workflow](RECORDING_WORKFLOW.md). Full details:
 [Hardware guide](webxr_teleop/hardware/README.md).
+While an episode is recording, Quest B or terminal ← discards it, opens the grippers fully, then returns to opening once finalization completes, tracking is fresh and side grips are released. It does not start a new episode. Space, a fault, or shutdown cancels the pending return. Outside recording mode, B retains its powered-stop action.
+
+**Tracking recovery while recording:** tracking loss pauses the current episode. Restore tracking, release side grips and press **X** to align and resume the same episode and timer. No A press is needed. Paused time does not count toward the episode duration. Faults and Space still abort.

@@ -44,14 +44,26 @@ class RecorderClient:
         if op == 'start':
             self.end_ns = None
             self.phase = 'starting'
+        elif op == 'pause':
+            self.phase = 'pausing'
+            self.status = dict(self.status, pause_ns=kwargs['pause_ns'])
+        elif op == 'resume':
+            self.phase = 'resuming'
         elif op == 'finish':
             self.end_ns = kwargs['end_ns']
             self.status = dict(self.status, end_ns=self.end_ns)
             self.phase = 'saving'
         send(self.control, self.pending)
 
+    def pause(self, reason):
+        if self.phase not in ('starting', 'recording', 'resuming'):
+            return
+        # Ordered control datagrams retain the start before this pause.
+        self.pending = None
+        self.request('pause', pause_ns=time.monotonic_ns(), reason=reason)
+
     def abort(self, reason):
-        if self.phase not in ('starting', 'recording', 'saving'):
+        if self.phase not in ('starting', 'recording', 'saving', 'pausing', 'paused', 'resuming'):
             return
         if self.pending and self.pending.get('op')=='finish' and self.pending.get('status')=='aborted':
             return
@@ -75,7 +87,10 @@ class RecorderClient:
             self.error = self.error or str(exc)
         for message in messages:
             self.last_status = now
+            previous_pause=self.status.get('pause_ns')
             self.status = message
+            if self.pending and self.pending['op']=='pause' and previous_pause is not None:
+                self.status=dict(message,pause_ns=previous_pause)
             if self.end_ns is not None:
                 self.status = dict(message, end_ns=self.end_ns)
             elif message.get('end_ns') is not None:

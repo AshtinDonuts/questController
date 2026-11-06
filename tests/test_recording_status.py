@@ -59,3 +59,11 @@ def test_stage_priority_and_next_action(options,expected):
     p=progress(**options)
     assert p['title']==expected
     assert p['hint']
+
+
+def test_paused_timer_and_resumed_active_duration():
+    p=progress(state='HOLD',snapshot=dict(phase='paused',pause_ns=20_000_000_000,paused_ns=2_000_000_000))
+    assert p['title']=='RECORDING PAUSED'
+    assert p['elapsed_s']==8
+    p=progress(snapshot=dict(paused_ns=7_000_000_000))
+    assert p['elapsed_s']==8

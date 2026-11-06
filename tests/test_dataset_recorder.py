@@ -42,6 +42,21 @@ def test_native_camera_queue_overflow_is_reported_and_memory_is_bounded():
     finally:camera.close()
 
 
+def test_camera_health_uses_clock_after_frame_snapshot(monkeypatch):
+    camera=Camera.__new__(Camera)
+    camera.config=dict(streams=['rgb'],max_gap_s=.2)
+    camera.error=None
+    camera.latest={'rgb':1_010_000_000}
+    monkeypatch.setattr('webxr_teleop.datasets.cameras.time.monotonic_ns',lambda:1_020_000_000)
+    assert camera.healthy(1_000_000_000)
+    camera.latest={'rgb':800_000_000}
+    assert not camera.healthy(1_000_000_000)
+    camera.latest={}
+    assert not camera.healthy(1_000_000_000)
+    camera.latest={'rgb':1_010_000_000};camera.error='capture failed'
+    assert not camera.healthy(1_000_000_000)
+
+
 def test_fsync_failure_never_publishes_accepted_episode(tmp_path,monkeypatch):
     # Fail the real commit operation after a complete episode has been written.
     monkeypatch.setattr('webxr_teleop.datasets.hdf5.os.fsync',lambda _:(_ for _ in ()).throw(OSError('disk full')))

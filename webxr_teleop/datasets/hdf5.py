@@ -25,6 +25,9 @@ class Episode:
         self.root = Path(root)
         self.identity = identity
         self.start_ns = start_ns
+        self.capture_since = start_ns
+        self.pause_ns = None
+        self.paused_ns = 0
         self.path = self.root / f'episode_{identity:06d}.partial'
         self.file = h5py.File(self.path, 'x')
         clock_ns=time.monotonic_ns()
@@ -60,7 +63,7 @@ class Episode:
 
     def robot(self, side, row):
         timestamp = ns(row['t'])
-        if timestamp < self.start_ns:
+        if (self.capture_since is None or timestamp < self.capture_since):
             return
         key = ('robot', side)
         previous = self.last_sequences.get(key)
@@ -71,14 +74,14 @@ class Episode:
                     qpos=np.asarray(row['q'], dtype=np.float64), seq=np.int64(row['seq']),
                     epoch=np.int64(row['epoch']), json=json_text(row))
         action = row.get('action')
-        if action and action.get('confirmed'):
+        if action and action.get('confirmed') and action['t_ns'] >= self.capture_since:
             self.append(f'streams/robot/{side}/actions', t_ns=np.int64(action['t_ns']),
                         qpos=np.asarray(action['qpos'], dtype=np.float64),
                         seq=np.int64(row['seq']), json=json_text(action))
 
     def controller(self, side, row):
         timestamp = ns(row.get('packet_received_t') or row['t'])
-        if timestamp < self.start_ns:
+        if (self.capture_since is None or timestamp < self.capture_since):
             return
         key = ('controller', side)
         sequence = row.get('packet_sequence')
@@ -90,7 +93,7 @@ class Episode:
                     freshness_issued_ns=np.int64(ns(row['t'])), json=json_text(row))
 
     def camera(self, name, stream, frame):
-        if frame['t_ns'] < self.start_ns:
+        if self.capture_since is None or frame['t_ns'] < self.capture_since:
             return
         key=('camera',name,stream)
         previous=self.last_sequences.get(key)
@@ -104,6 +107,26 @@ class Episode:
                     device_ms=np.float64(frame['device_ms']), frame_number=np.int64(frame['frame_number']),
                     image=frame['image'])
 
+    def pause(self, timestamp, reason):
+        # Remove the small cross-channel tail already written before pause arrived.
+        def trim(_, obj):
+            if isinstance(obj, h5py.Group) and 't_ns' in obj:
+                count=int(np.searchsorted(obj['t_ns'][:], timestamp, side='left'))
+                for dataset in obj.values():
+                    dataset.resize(count, axis=0)
+        if 'streams' in self.file:
+            self.file['streams'].visititems(trim)
+        self.capture_since=None
+        self.pause_ns=timestamp
+        self.event('pause', timestamp, reason=reason)
+
+    def resume(self, timestamp):
+        self.paused_ns+=timestamp-self.pause_ns
+        self.pause_ns=None
+        self.capture_since=timestamp
+        self.last_sequences.clear()
+        self.event('resume', timestamp)
+
     def finish(self, status, end_ns, *, outcome='unknown', reason=''):
         if status not in ('saved', 'discarded', 'aborted') or outcome not in ('unknown', 'success', 'failure'):
             raise ValueError('Invalid episode status/outcome')
@@ -116,7 +139,9 @@ class Episode:
                     dataset.resize(count, axis=0)
         self.file['streams'].visititems(trim) if 'streams' in self.file else None
         self.event('end', end_ns, status=status, reason=reason)
-        self.file.attrs.update(status=status, outcome=outcome, end_ns=end_ns, reason=reason)
+        paused_ns=self.paused_ns+(max(0,end_ns-self.pause_ns) if self.pause_ns is not None else 0)
+        self.file.attrs.update(status=status, outcome=outcome, end_ns=end_ns, reason=reason,
+                               paused_ns=paused_ns, active_duration_ns=max(0,end_ns-self.start_ns-paused_ns))
         self.file.flush()
         self.file.close()
         if status == 'saved':

@@ -74,12 +74,13 @@ press **↑** to request return to opening; return is not automatic.
 
 ## After controller tracking loss
 
-Tracking loss aborts the active episode. Restore tracking, release the side-grip
-and press Quest X (or terminal X) to align again. Alignment restores teleoperation
-but does not resume capture. To record again, release all selected side-grips,
-wait for the arms to settle, then press terminal **→** and wait for **REC**.
-This starts a new episode; the aborted file remains separate and does not count
-as saved. Pressing → while gripping is rejected even after successful alignment.
+Tracking loss pauses the current episode and freezes its timer. Restore tracking,
+release the selected side grips, then press Quest X (or terminal X). Successful
+alignment resumes the same episode automatically; do not press A to resume.
+The timer continues from its paused value, excluding the interruption. Paused
+camera/robot/controller samples are omitted; native timestamps and pause/resume
+events preserve the gap. Export aligns each active segment separately.
+Space, hardware/recorder faults and shutdown still abort the episode.
 
 ## Terminal keymap
 
@@ -94,7 +95,7 @@ as saved. Pressing → while gripping is rejected even after successful alignmen
 | **S** | Request sleep. |
 
 Quest controls remain unchanged: **A** starts/saves and requests return after
-finalization; **B** stops immediately; **X** aligns with selected grips released;
+finalization; **B** discards and returns to opening; **Space** stops immediately; **X** aligns with selected grips released;
 holding **Y** for one second requests sleep. Side grips move the matching arms,
 and triggers control the grippers.
 
@@ -170,3 +171,5 @@ sources.
 
 See [Dataset recording configuration and usage](docs/dataset_recording.md) for
 configuration, validation and export details.
+
+While an episode is recording, Quest B or terminal ← discards it, opens the grippers fully, then returns to opening once finalization completes, tracking is fresh and side grips are released. It does not start a new episode. Space, a fault, or shutdown cancels the pending return. Outside recording mode, B retains its powered-stop action.

@@ -167,7 +167,7 @@ def main():
     log=(output/'hardware.jsonl').open('w')
     twin_sock=None; twin_proc=None
     recorder=None; recording_failed=False; episode_prepared=False; episode_return=False
-    release_pending=False; release_started=None
+    release_pending=False; release_started=None; discard_return_pending=False
     exit_requested=False; exit_attempted=False; exit_started=None
     last_progress=0.;last_progress_phase=None
     record_last_result=''
@@ -194,8 +194,9 @@ def main():
         if recorder and kind!='tick':recorder.sample('event',event=kind,t_ns=time.monotonic_ns(),details=kwargs)
     def hold(why, is_fault=False, recoverable=False, abort_recording=True):
         nonlocal state,reason,epoch,aligned,y_since,last_result,home_release_required,fault,worker_armed,stop_this_tick,align_requested
-        nonlocal restart_blocked,restart_active,release_pending
+        nonlocal restart_blocked,restart_active,release_pending,discard_return_pending
         release_pending=False
+        discard_return_pending=False
         if recorder and abort_recording:recorder.abort(why)
         if is_fault and not recoverable:restart_blocked=True
         restart_active=False
@@ -222,7 +223,7 @@ def main():
         if missing:return 'Handover rejected: controller tracking missing/stale: '+', '.join(missing)
         gripping=[s for s in sides if hands[s]['grip']]
         if gripping:return 'Handover rejected: release side grips: '+', '.join(gripping)
-        if hands['right'] and hands['right']['buttons'].get('b'):return 'Handover rejected: release right B stop'
+        if recorder is None and hands['right'] and hands['right']['buttons'].get('b'):return 'Handover rejected: release right B stop'
         align_requested=False
         epoch+=1; state='ARMED'; reason='Press Quest left X or terminal X to align'; aligned=False
         home_release_required=False; last_result=None; worker_armed=True; reset_at=now
@@ -286,20 +287,22 @@ def main():
     def recording_command(command, now, outcome='unknown'):
         nonlocal episode_prepared,episode_return,epoch,state,reason,aligned,align_requested
         nonlocal last_result,worker_armed,reset_at,opening_completed,opening_pending
-        nonlocal restart_active,restart_preparing_at,home_release_required,release_pending
+        nonlocal restart_active,restart_preparing_at,home_release_required,release_pending,discard_return_pending
         if recorder is None:return 'Recording is not enabled'
         if recording_failed or recorder.error:return 'Recording rejected: '+str(recorder.error)
         if stop_this_tick or fault or stopping or exit_requested:return 'Recording rejected: stop/fault/exit has priority'
         if command=='record-toggle':
-            command=('record-save' if recorder.phase=='recording' else
-                     'record-next' if recorder.phase=='finished' and not episode_prepared else 'record-start')
+            from .recording_status import recording_toggle_command
+            command=recording_toggle_command(recorder.phase, aligned=aligned, state=state, prepared=episode_prepared)
         if command in ('record-save','record-discard'):
-            if recorder.phase!='recording':return 'Recording rejected: no active episode'
+            if recorder.phase not in ('recording','paused'):return 'Recording rejected: no active episode'
             recorder.request('finish',status='saved' if command=='record-save' else 'discarded',
                              end_ns=time.monotonic_ns(),outcome=outcome)
             hold('Episode ended; powered hold',abort_recording=False)
             release_pending=True
-            return 'Finalizing episode; opening grippers fully at end pose'
+            discard_return_pending=command=='record-discard'
+            return ('Discarding episode; opening grippers, then returning to opening. Release side grips.'
+                    if discard_return_pending else 'Finalizing episode; opening grippers fully at end pose')
         if recorder.phase not in ('idle','finished'):return 'Recording rejected: wait for recorder readiness/finalization'
         if release_pending or state=='RELEASING':return 'Recording rejected: wait for grippers to open fully'
         if recording_config['num_episodes'] and recorder.status.get('saved',0)>=recording_config['num_episodes']:
@@ -322,7 +325,7 @@ def main():
         if command!='record-start':return 'Unknown recording command'
         if any(not c.get('healthy') for c in recorder.status.get('cameras',{}).values()):
             return 'Recording rejected: wait for fresh camera streams'
-        if not aligned or state!='ARMED':return 'Recording rejected: release grips and press X to align, then Right to start'
+        if not aligned or state!='ARMED':return 'Recording rejected: release grips and press X to align, then Quest A or Right to start'
         # Capture does not grant motion authority or require a particular pose.
         # An already aligned, stationary teleop session can record in place;
         # returning to opening remains an explicit operator action.
@@ -383,9 +386,9 @@ def main():
             print('Quest URL:',server.url,flush=True)
         if sys.stdin.isatty():
             old_terminal=termios.tcgetattr(sys.stdin); tty.setcbreak(sys.stdin.fileno())
-        if args.sequence: print('Sequence: opening → READY; left X hands over + aligns; grip moves, trigger grips; hold left Y 1 s or terminal S → sleep (also from HOLD); K restarts to opening pose; B stops.',flush=True)
+        if args.sequence: print('Sequence: opening → READY; left X hands over + aligns; grip moves, trigger grips; hold left Y 1 s or terminal S → sleep (also from HOLD); K restarts to opening pose; Space stops; B stops only without recording.',flush=True)
         if not args.sequence: print('Space: powered stop. R: reset. Quest X: align. Hold Y 1 s: home. B: stop.',flush=True)
-        if recorder:print('Dataset: Right arrow starts/saves; Left arrow discards; Up arrow returns to opening; Escape sleeps then exits. Quest A advances; B stops; X aligns.',flush=True)
+        if recorder:print('Dataset: Right arrow starts/saves; Left arrow discards; Up arrow returns to opening; Escape sleeps then exits. Quest A starts/saves/advances; B discards and returns; Space stops; X aligns.',flush=True)
         print('MP4:',output/'video/session.mp4',flush=True)
         event('startup',mode=args.mode,profile=profile,sides=sides,enable_torque=args.startup,manual_start=args.manual_start,sequence=args.sequence,watchdog_policy='software_hold' if args.manual_start or args.sequence else 'motor_and_software')
         start=time.monotonic(); next_tick=start; demo_reset=False; demo_start=None
@@ -494,27 +497,44 @@ def main():
                 # Initial headset connection cannot invalidate a control reference
                 # before startup feedback or an explicit reset exists.
                 if (args.sequence and (state=='ARMED' or (state=='PARKING' and parking_requires_tracking))) or (not args.sequence and (state!='DISARMED' or feedback)):
-                    hold('Quest reference/connection changed')
+                    if recorder:recorder.pause('Quest reference/connection changed')
+                    hold('Quest reference/connection changed',abort_recording=False)
             if state in ('ARMED','HOMING','OPENING','PARKING','RELEASING') and (not fresh or (state not in ('OPENING','RELEASING') and not (state=='PARKING' and not parking_requires_tracking) and not tracking)):
                 if not fresh:
                     hold('Feedback watchdog expired')
                 else:
                     missing=[f'{s} missing' if hands[s] is None else f'{s} age {(now-hands[s]["t"])*1000:.0f} ms'
                              for s in sides if hands[s] is None or not 0<=now-hands[s]['t']<=TTL]
-                    hold('Controller tracking lost: '+', '.join(missing))
+                    tracking_reason='Controller tracking lost: '+', '.join(missing)
+                    if recorder:recorder.pause(tracking_reason)
+                    hold(tracking_reason,abort_recording=False)
             if state in ('ARMED','HOMING','OPENING','PARKING','RELEASING') and reset_at is not None and now-reset_at>TTL and any(feedback.get(s,{}).get('epoch')!=epoch for s in sides):
                 hold('Motor reset acknowledgement expired')
             if state in ('ARMED','HOMING','OPENING','PARKING','RELEASING') and any(feedback.get(s,{}).get('state')=='HOLD' and feedback[s]['t']>now-.1 for s in sides):
                 # Allow reset message one worker cycle to arrive; epoch is checked below via ack.
                 if all(feedback.get(s,{}).get('epoch')==epoch for s in sides):
-                    causes='; '.join(s+': '+feedback[s].get('reason','unknown') for s in sides if feedback[s].get('state')=='HOLD')
-                    hold('Motor hold: '+causes)
+                    held=[s for s in sides if feedback[s].get('state')=='HOLD']
+                    causes='; '.join(s+': '+feedback[s].get('reason','unknown') for s in held)
+                    tracking_expired=all(feedback[s].get('reason')=='Controller target expired at motor execution' for s in held)
+                    if tracking_expired:
+                        # The same tracking interruption can be detected first
+                        # by either watchdog. Preserve the pause/re-align flow
+                        # in both cases; motor hold and the 150 ms limit remain.
+                        why='Controller tracking expired at motor execution: '+', '.join(held)
+                        if recorder:recorder.pause(why)
+                        hold(why,abort_recording=False)
+                    else:
+                        hold('Motor hold: '+causes)
             current={b:bool(hands[s] and hands[s]['buttons'].get(k)) for b,s,k in
                 [('x','left','x'),('y','left','y'),('b','right','b'),('a','right','a')]}
             if recorder and current['a'] and not buttons.get('a'):record_commands.append(('record-toggle','unknown'))
             if not current['y']: home_button_ready=True
             if current['b']:
-                hold('Quest B stop')
+                if recorder:
+                    if not buttons.get('b'):
+                        record_commands.insert(0,('record-discard','unknown'))
+                else:
+                    hold('Quest B stop')
             do_reset=False; do_sleep=False; do_restart=False; do_align=False
             keyboard_data=b''
             if old_terminal is not None and select.select([sys.stdin],[],[],0)[0]:
@@ -526,7 +546,7 @@ def main():
                 elif key.lower()==b's': do_sleep=True
                 elif key.lower()==b'k': do_restart=True
                 elif key==b'right' and recorder:
-                    if recorder.phase=='recording':record_commands.append(('record-save','unknown'))
+                    if recorder.phase in ('recording','paused'):record_commands.append(('record-save','unknown'))
                     else:record_commands.append(('record-start','unknown'))
                 elif key==b'up' and recorder:record_commands.append(('record-next','unknown'))
                 elif key==b'left' and recorder:record_commands.append(('record-discard','unknown'))
@@ -706,7 +726,9 @@ def main():
                     if result['mode']=='teleop':
                         reason=('Catching up; holding bounded target until motors follow' if any(d.get('catching_up') for d in result.get('diagnostics',{}).values()) else 'Aligned; side grip moves arm; index trigger controls aperture')
                     if result['home_done'] and result['mode']=='release':
+                        pending_return=discard_return_pending
                         hold('Episode ended; grippers fully open; arm joints held',abort_recording=False)
+                        discard_return_pending=pending_return
                         mode='hold'
                         continue
                     if result['home_done'] and args.sequence:
@@ -741,8 +763,19 @@ def main():
             if not planner_proc.is_alive() and not fault:
                 hold('Planner process exited',True)
             if recorder:
-                if recorder.phase=='recording' and recording_config['episode_time_s'] and recorder.start_ns is not None and time.monotonic_ns()-recorder.start_ns>=recording_config['episode_time_s']*1e9:
+                if (recorder.phase=='paused' and recorder.pending is None and state=='ARMED' and aligned
+                        and fresh and tracking and not stop_this_tick and not exit_requested
+                        and all(not hands[s]['grip'] for s in sides)):
+                    recorder.request('resume',resume_ns=time.monotonic_ns())
+                    event('episode_resume_requested')
+                if recorder.phase=='recording' and recording_config['episode_time_s'] and progress_status()['elapsed_s']>=recording_config['episode_time_s']:
                     record_commands.append(('record-save','unknown'))
+                if (discard_return_pending and recorder.phase=='finished' and state=='HOLD'
+                        and not release_pending and not stop_this_tick and not exit_requested
+                        and fresh and tracking and all(not hands[s]['grip'] for s in sides)
+                        and all(restart_windows[s].ready for s in sides)):
+                    record_commands.insert(0,('record-next','unknown'))
+                    discard_return_pending=False
                 for command,outcome in record_commands:
                     result=recording_command(command,time.monotonic(),outcome)
                     record_last_result=result
@@ -751,7 +784,7 @@ def main():
                 if recorder.error and not recording_failed:
                     recording_failed=True;hold('Dataset recorder: '+recorder.error)
                 if state not in ('ARMED','OPENING','HOMING','PARKING','RELEASING'):mode='hold'
-                if recorder.phase=='starting':mode='hold'
+                if recorder.phase in ('starting','pausing','paused','resuming') and mode!='align':mode='hold'
             if fresh and not planner_pending and planner_proc.is_alive():
                 # Hold jobs initialize/validate geometry even before arming.
                 seq=int(now*1e9)

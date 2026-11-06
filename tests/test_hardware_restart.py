@@ -115,7 +115,7 @@ if __name__=='__main__':
                 if marker.exists():
                     if marker.read_text().strip()=='gripper':
                         q[6]=0.;h['gripper_feedback']=dict(state='out_of_range',outside_counts=5,raw_count=2467,unclamped_aperture=-5/627)
-                    else:q[0]+=.04
+                    else:q[0]+=.1  # Exceeds the operator-selected 5 degree drift limit.
                 return q,h
         worker.MockBus=DriftingBus
         worker.main()

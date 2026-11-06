@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 @contextmanager
-def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, slow_planner=False, full_resolution=False):
+def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, slow_planner=False, full_resolution=False, worker_hold_reason=None):
     if not QUEST_PYTHON.exists() or not RECORD_PYTHON.exists():
         pytest.skip('Quest and recording interpreters required')
     probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
@@ -50,6 +50,27 @@ def delayed_run(*args):
     time.sleep(1)
     original_run(*args)
 planner.run = delayed_run
+if __name__ == '__main__':
+    run.main()
+''')
+        entry=[str(runner)]
+    if worker_hold_reason is not None:
+        runner=tmp_path/'worker_hold.py'
+        runner.write_text(f'''import sys
+from pathlib import Path
+sys.path.insert(0, {str(ROOT)!r})
+from webxr_teleop.hardware import run
+original_receive = run.receive
+marker = Path({str(tmp_path/'inject-worker-hold')!r})
+def receive(sock):
+    messages = original_receive(sock)
+    for message in messages:
+        if marker.exists() and message.get('type') == 'feedback' and message.get('state') == 'ARMED':
+            marker.unlink()
+            message.update(state='HOLD', reason={worker_hold_reason!r})
+            break
+    return messages
+run.receive = receive
 if __name__ == '__main__':
     run.main()
 ''')
@@ -180,39 +201,78 @@ def test_single_arm_ignores_unselected_controller_loss_but_stops_for_selected(tm
             state['absent']=side
             stopped=await wait(lambda s:s['state']=='HOLD')
             assert 'Controller tracking' in stopped['reason']
-            await wait(lambda s:s['recording']['phase']=='finished')
-            assert (await asyncio.to_thread(control))['recording']['last_status']=='aborted'
+            await wait(lambda s:s['recording']['phase']=='paused')
         # Left-only must also start and align without ever seeing a right controller.
         asyncio.run(exercise(port,control,scenario,absent='right' if side=='left' else None))
 
 
-def test_tracking_recovery_requires_released_grip_then_starts_new_episode(tmp_path):
-    with supervisor(tmp_path,'left') as (_,port,control):
+@pytest.mark.parametrize('worker_expiry',[False,True])
+def test_tracking_recovery_x_resumes_same_episode_and_timer(tmp_path,worker_expiry):
+    reason='Controller target expired at motor execution' if worker_expiry else None
+    with supervisor(tmp_path,'left',worker_hold_reason=reason) as (_,port,control):
         async def scenario(state,wait,align):
             first=await asyncio.to_thread(control)
-            state['lost']=True
-            aborted=await wait(lambda s:s['state']=='HOLD' and s['recording']['phase']=='finished')
-            assert aborted['recording']['last_status']=='aborted'
-            state['lost']=False
-            await asyncio.sleep(.2)
-            await align()
-            assert (await asyncio.to_thread(control))['recording']['phase']=='finished'
-            state['grip']=True
-            await asyncio.sleep(.1)
-            await asyncio.to_thread(control,'record-start')
-            rejected=await wait(lambda s:'release selected side grips' in s['recording']['result'])
-            assert rejected['recording']['phase']=='finished'
-            state['grip']=False
-            await asyncio.sleep(.4)
-            await asyncio.to_thread(control,'record-start')
-            resumed=await wait(lambda s:s['recording']['phase']=='recording')
-            assert resumed['recording']['episode']==first['recording']['episode']+1
-            await asyncio.sleep(.3)
+            for _ in range(2):
+                if worker_expiry:
+                    (tmp_path/'inject-worker-hold').touch()
+                else:
+                    state['lost']=True
+                paused=await wait(lambda s:s['state']=='HOLD' and s['recording']['phase']=='paused')
+                elapsed=paused['progress']['elapsed_s']
+                assert elapsed>0
+                await asyncio.sleep(.5)
+                assert (await asyncio.to_thread(control))['progress']['elapsed_s']==elapsed
+                state['lost']=False
+                await asyncio.sleep(.2)
+                # Restored tracking alone does not resume capture.
+                assert (await asyncio.to_thread(control))['recording']['phase']=='paused'
+                state['grip']=True;state['x']=True
+                await asyncio.sleep(.15)
+                assert (await asyncio.to_thread(control))['recording']['phase']=='paused'
+                state['grip']=False;state['x']=False
+                await asyncio.sleep(.1)
+                await align()
+                resumed=await wait(lambda s:s['recording']['phase']=='recording')
+                assert resumed['recording']['episode']==first['recording']['episode']
+                assert elapsed <= resumed['progress']['elapsed_s'] < elapsed+1
             await asyncio.to_thread(control,'record-save')
             await wait(lambda s:s['recording']['saved']==1)
         asyncio.run(exercise(port,control,scenario,absent='right'))
+    assert not list((tmp_path/'dataset/aborted').glob('*.hdf5'))
+    accepted=list((tmp_path/'dataset/accepted').glob('*.hdf5'))
+    assert len(accepted)==1
+    import h5py
+    import numpy as np
+    from webxr_teleop.datasets.hdf5 import validate
+    validate(accepted[0])
+    with h5py.File(accepted[0],'r') as file:
+        events=[(int(t),json.loads(v)) for t,v in zip(file['events/t_ns'][:],file['events/json'][:])]
+        pauses=[t for t,v in events if v['kind']=='pause']
+        resumes=[t for t,v in events if v['kind']=='resume']
+        assert len(pauses)==len(resumes)==2
+        def check(_,obj):
+            if isinstance(obj,h5py.Group) and 't_ns' in obj:
+                for begin,end in zip(pauses,resumes):
+                    assert not np.any((obj['t_ns'][:]>=begin)&(obj['t_ns'][:]<end))
+        file['streams'].visititems(check)
+        from webxr_teleop.datasets.export_lerobot import alignment
+        grid,_,_=alignment(file)
+        for begin,end in zip(pauses,resumes):
+            assert not np.any((grid>=begin)&(grid<end))
+
+
+@pytest.mark.parametrize('reason',['Command watchdog expired','Target expired before serial write'])
+def test_other_worker_holds_still_abort_recording(tmp_path,reason):
+    with supervisor(tmp_path,'left',worker_hold_reason=reason) as (_,port,control):
+        async def scenario(state,wait,align):
+            (tmp_path/'inject-worker-hold').touch()
+            status=await wait(lambda s:s['recording'].get('last_status')=='aborted')
+            assert status['state']=='HOLD'
+            assert reason in status['reason']
+            assert status['recording']['saved']==0
+        asyncio.run(exercise(port,control,scenario,absent='right'))
     assert len(list((tmp_path/'dataset/aborted').glob('*.hdf5')))==1
-    assert len(list((tmp_path/'dataset/accepted').glob('*.hdf5')))==1
+    assert not list((tmp_path/'dataset/accepted').glob('*.hdf5'))
 
 
 def test_exit_during_recording_aborts_episode_and_sleeps(tmp_path):
@@ -302,14 +362,13 @@ def test_two_episodes_hold_explicit_return_discard_and_resume(tmp_path,side):
     assert result['episodes'][0]['frames']>5
 
 
-@pytest.mark.parametrize('failure',['stop','tracking','recorder'])
+@pytest.mark.parametrize('failure',['stop','recorder'])
 def test_recording_interruptions_abort_and_hold(tmp_path,failure):
     with supervisor(tmp_path) as (_,port,control):
         async def scenario(state,wait,align):
             if failure=='stop':
-                # Simultaneous A save and B stop must abort, never accept.
-                state.update(a=True,b=True)
-            elif failure=='tracking':state['lost']=True
+                # Local stop (also terminal Space) still aborts active capture.
+                await asyncio.to_thread(control,'stop')
             else:
                 status=await asyncio.to_thread(control)
                 os.kill(status['processes']['recorder'],signal.SIGSTOP)
@@ -380,3 +439,26 @@ def test_two_full_resolution_cameras_capture_without_heartbeat_failure(tmp_path)
             await asyncio.to_thread(control,'record-save')
             await wait(lambda s:s['recording']['saved']==1)
         asyncio.run(exercise(port,control,scenario,absent='right'))
+
+
+@pytest.mark.parametrize('source',['quest','terminal'])
+def test_discard_returns_to_opening_without_starting_capture(tmp_path,source):
+    with supervisor(tmp_path,'left') as (_,port,control):
+        async def scenario(state,wait,align):
+            await asyncio.sleep(.35)
+            state['grip']=False
+            if source=='quest':
+                state['b']=True
+            else:
+                await asyncio.to_thread(control,'record-discard')
+            result=await wait(lambda s:s['recording']['phase']=='finished')
+            assert result['recording']['last_status']=='discarded'
+            assert result['recording']['saved']==0
+            result=await wait(lambda s:s['state']=='READY')
+            assert result['feedback']['left']['q'][6]==pytest.approx(.8,abs=.01)
+            await asyncio.sleep(.25)
+            assert (await asyncio.to_thread(control))['state']=='READY'
+            state['b']=False
+        asyncio.run(exercise(port,control,scenario))
+    assert len(list((tmp_path/'dataset/discarded').glob('*.hdf5')))==1
+    assert not list((tmp_path/'dataset/accepted').glob('*.hdf5'))

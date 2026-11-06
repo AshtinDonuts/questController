@@ -31,14 +31,35 @@ def alignment(file, fps=30, robot_tolerance_s=.04, camera_tolerance_s=None):
             if not np.isfinite(tolerance) or tolerance <= 0:
                 raise ValueError('camera tolerance must be finite and positive')
             streams[key] = (file[key]['t_ns'][:], False, tolerance)
-    begin = max(int(t[0]) for t, _, _ in streams.values())
-    end = min(int(t[-1]) for t, _, _ in streams.values())
-    if end <= begin:
+    # A paused episode retains native timestamps, with explicit capture gaps.
+    # Build each segment independently so alignment never crosses a pause.
+    intervals=[]
+    segment_start=int(file.attrs['start_ns'])
+    if 'events' in file:
+        for timestamp,raw in zip(file['events/t_ns'][:],file['events/json'][:]):
+            kind=json.loads(raw)['kind']
+            if kind=='pause' and segment_start is not None:
+                intervals.append((segment_start,int(timestamp)))
+                segment_start=None
+            elif kind=='resume':
+                segment_start=int(timestamp)
+    if segment_start is not None:
+        intervals.append((segment_start,int(file.attrs['end_ns'])))
+    grids=[]
+    for lower,upper in intervals:
+        coverage=[t[(t>=lower)&(t<upper)] for t,_,_ in streams.values()]
+        if any(not len(t) for t in coverage):
+            continue
+        begin=max(int(t[0]) for t in coverage)
+        end=min(int(t[-1]) for t in coverage)
+        if end<=begin:
+            continue
+        count=int((end-begin)*fps//1_000_000_000)+1
+        part=begin+np.rint(np.arange(count)*1e9/fps).astype(np.int64)
+        grids.append(part[part<=end])
+    if not grids:
         raise ValueError('No common valid stream coverage')
-    # Relative arithmetic avoids precision loss from large host-clock origins.
-    count = int((end-begin)*fps//1_000_000_000)+1
-    grid = begin+np.rint(np.arange(count)*1e9/fps).astype(np.int64)
-    grid = grid[grid <= end]
+    grid=np.concatenate(grids)
     indices = {}
     offsets = {}
     for key, (times, following, tolerance) in streams.items():

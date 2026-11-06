@@ -86,13 +86,13 @@ or return is triggered by either limit.
    ceremony aperture. Reset the objects, wait for arrival, press X
    to align, then press A to record again. No countdown starts another episode.
 
-Terminal → starts/saves; ↑ requests return to opening; ← discards.
+Terminal → starts/saves; ↑ requests return to opening; B / ← discards and returns to opening.
 Escape, q, Ctrl+C and SIGTERM request sleep, wait for measured arrival and
 confirmed torque-off, then exit. A stop/fault, stale feedback or interrupted sleep
 retains powered hold; a second exit request exits immediately in hold. Return uses a separate arrow so
 a repeated save key cannot initiate return motion.
-**Right B and terminal Space remain immediate powered
-stops** and abort an active episode. Tracking/reference changes, hardware faults,
+**Terminal Space remains an immediate powered
+stop** and abort an active episode. Hardware faults,
 writer failure, recording queue overflow and stale required cameras also abort.
 Sleep and shutdown abort unfinished episodes. Stop has priority over save/start.
 Fault recovery continues to use the existing controls; recorder failure requires
@@ -245,3 +245,9 @@ Run source/export tests using the export environment with
 The supervisor tests additionally require the existing Quest/recording
 interpreters and local socket access. All hardware acceptance in these tests is
 mock-only. Real cameras and loaded physical motion still need commissioning.
+
+Recording returns use the same 5° per-joint opening tolerance as keyboard restarts, with 300 ms of stationary feedback and the ceremony gripper aperture required. Sleep retains its tighter arrival check. After return, release grips, press X to align, then right-controller A to begin recording. If you align at the current pose without returning, A starts recording there too.
+
+While an episode is recording, Quest B or terminal ← discards it, opens the grippers fully, then returns to opening once finalization completes, tracking is fresh and side grips are released. It does not start a new episode. Space, a fault, or shutdown cancels the pending return. Outside recording mode, B retains its powered-stop action.
+
+Tracking/reference loss pauses capture and freezes the episode timer. This includes a controller-source timeout detected by the motor worker: motion still enters powered hold at the existing 150 ms limit. Restore tracking, release selected grips and press X: successful alignment resumes the same episode without A or →. Paused intervals are omitted from captured streams and excluded from the duration limit. Native timestamps retain the gap, explicit pause/resume events mark it, and export aligns active segments separately. Other motor faults and explicit stops still abort; they never auto-resume.

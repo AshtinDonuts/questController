@@ -162,7 +162,7 @@ class Planner:
                 self.origin={}; self.settled_since=None
                 # Operator-requested restart arrival tolerance; sustained
                 # stationary feedback is still required before handoff.
-                arrival_deg=(5 if restarting and not (job.get('episode_return') or job.get('strict_opening')) else 2) if mode=='opening' else .5
+                arrival_deg=(5 if restarting else 2) if mode=='opening' else .5
                 self.arrival={s:SettlingWindow(arm_error=math.radians(arrival_deg)) for s in self.sides}
                 self.last={s:np.array(measured[s]) for s in self.sides}
                 self.velocity={s:np.zeros(7) for s in self.sides}

@@ -11,9 +11,9 @@ def send(sock, obj):
         return False
 
 
-def receive(sock):
+def receive(sock, limit=64):
     messages = []
-    for _ in range(64):
+    for _ in range(limit):
         try:
             raw = sock.recv(65536)
             if not raw:
