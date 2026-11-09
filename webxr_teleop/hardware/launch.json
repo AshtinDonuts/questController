@@ -3,6 +3,7 @@
   "side": "both",
   "sequence": true,
   "profile": "rig.json",
+  "recording_python": "/tmp/quest-lerobot-v3/bin/python",
   "translation_scale": 0.7,
   "rotation_scale": 0.7,
   "tracking_position_deadband_m": 0.002,

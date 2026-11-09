@@ -1,7 +1,7 @@
 """Offline native HDF5 -> LeRobot v3 export; never opens robot devices."""
 import argparse
 import hashlib
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 import json
 from pathlib import Path
 
@@ -9,71 +9,8 @@ import h5py
 import numpy as np
 
 from .hdf5 import validate
+from .alignment import alignment
 from ..hardware.core import JOINTS
-
-
-def alignment(file, fps=30, robot_tolerance_s=.04, camera_tolerance_s=None):
-    """Causal observations, followed by each arm's next confirmed cycle target."""
-    if isinstance(fps, bool) or not isinstance(fps, int) or fps <= 0:
-        raise ValueError('fps must be a positive integer')
-    if not np.isfinite(robot_tolerance_s) or robot_tolerance_s <= 0:
-        raise ValueError('robot tolerance must be finite and positive')
-    metadata = json.loads(file['metadata/json'][()])
-    streams = {}
-    for side in metadata['sides']:
-        for name in ('observations', 'actions'):
-            key = f'streams/robot/{side}/{name}'
-            streams[key] = (file[key]['t_ns'][:], name == 'actions', robot_tolerance_s)
-    for name, cfg in metadata['config']['cameras'].items():
-        for stream in cfg['streams']:
-            key = f'streams/cameras/{name}/{stream}'
-            tolerance = 2/cfg['fps'] if camera_tolerance_s is None else camera_tolerance_s
-            if not np.isfinite(tolerance) or tolerance <= 0:
-                raise ValueError('camera tolerance must be finite and positive')
-            streams[key] = (file[key]['t_ns'][:], False, tolerance)
-    # A paused episode retains native timestamps, with explicit capture gaps.
-    # Build each segment independently so alignment never crosses a pause.
-    intervals=[]
-    segment_start=int(file.attrs['start_ns'])
-    if 'events' in file:
-        for timestamp,raw in zip(file['events/t_ns'][:],file['events/json'][:]):
-            kind=json.loads(raw)['kind']
-            if kind=='pause' and segment_start is not None:
-                intervals.append((segment_start,int(timestamp)))
-                segment_start=None
-            elif kind=='resume':
-                segment_start=int(timestamp)
-    if segment_start is not None:
-        intervals.append((segment_start,int(file.attrs['end_ns'])))
-    grids=[]
-    for lower,upper in intervals:
-        coverage=[t[(t>=lower)&(t<upper)] for t,_,_ in streams.values()]
-        if any(not len(t) for t in coverage):
-            continue
-        begin=max(int(t[0]) for t in coverage)
-        end=min(int(t[-1]) for t in coverage)
-        if end<=begin:
-            continue
-        count=int((end-begin)*fps//1_000_000_000)+1
-        part=begin+np.rint(np.arange(count)*1e9/fps).astype(np.int64)
-        grids.append(part[part<=end])
-    if not grids:
-        raise ValueError('No common valid stream coverage')
-    grid=np.concatenate(grids)
-    indices = {}
-    offsets = {}
-    for key, (times, following, tolerance) in streams.items():
-        selected = np.searchsorted(times, grid, side='left' if following else 'right')
-        if not following:
-            selected -= 1
-        if np.any(selected < 0) or np.any(selected >= len(times)):
-            raise ValueError(f'Uncovered timeline: {key}')
-        delta = times[selected]-grid
-        if np.any(np.abs(delta) > tolerance*1e9):
-            raise ValueError(f'Alignment gap exceeds tolerance: {key} ({np.max(np.abs(delta))/1e6:.1f} ms)')
-        indices[key] = selected
-        offsets[key] = delta
-    return grid, indices, offsets
 
 
 def signature(metadata):
@@ -84,17 +21,76 @@ def signature(metadata):
                       for side in metadata['sides']})
 
 
-def export(source, destination, repo_id, *, fps=30, robot_tolerance_s=.04, camera_tolerance_s=None):
-    if version('lerobot') != '0.6.1':
-        raise RuntimeError('Use the isolated requirements-dataset-export.txt environment (LeRobot 0.6.1)')
+def require_lerobot():
+    try:
+        installed = version('lerobot')
+    except PackageNotFoundError:
+        installed = None
+    if installed != '0.6.1':
+        raise RuntimeError('Use requirements-dataset-export.txt in an isolated Python 3.12+ environment (LeRobot 0.6.1)')
+
+
+def features_for(metadata):
+    names = [f'{side}.{joint}' for side in metadata['sides'] for joint in JOINTS+('gripper',)]
+    features = {key:dict(dtype='float32', shape=(len(names),), names=names)
+                for key in ('observation.state','action')}
+    for name, cfg in metadata['config']['cameras'].items():
+        for stream in cfg['streams']:
+            key = f'observation.images.{name}' if stream == 'rgb' else f'observation.depth.{name}'
+            features[key] = dict(dtype='video', shape=(cfg['height'], cfg['width'], 3 if stream == 'rgb' else 1),
+                                 names=['height','width','channels'])
+            if stream == 'depth':
+                features[key]['info'] = dict(is_depth_map=True, depth_unit='m')
+    return features
+
+
+def create_dataset(destination, repo_id, metadata, fps, *, streaming_encoding=False):
+    require_lerobot()
     from lerobot.configs import RGBEncoderConfig
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    features = features_for(metadata)
+    return LeRobotDataset.create(repo_id=repo_id, root=destination, fps=fps,
+        robot_type='quest_viperx', features=features, use_videos=True, video_backend='pyav',
+        rgb_encoder=RGBEncoderConfig(vcodec='h264', pix_fmt='yuv420p', crf=18, preset='fast'),
+        image_writer_threads=0 if streaming_encoding else 2, encoder_threads=2,
+        streaming_encoding=streaming_encoding, encoder_queue_maxsize=8)
+
+
+def episode_paths(source):
+    source = Path(source)
+    if source.is_file():
+        return [source]
+    directory = source if source.name == 'accepted' else source / 'accepted'
+    paths = sorted(directory.glob('episode_*.hdf5'))
+    if not paths:
+        raise ValueError('No accepted source episodes')
+    return paths
+
+
+def frame_at(file, metadata, indices, i):
+    frame = dict(task=metadata['config']['task'])
+    for target, kind in (('observation.state', 'observations'), ('action', 'actions')):
+        frame[target] = np.concatenate([
+            file[f'streams/robot/{side}/{kind}/qpos'][indices[f'streams/robot/{side}/{kind}'][i]]
+            for side in metadata['sides']]).astype(np.float32)
+    for name, cfg in metadata['config']['cameras'].items():
+        for stream in cfg['streams']:
+            key = f'streams/cameras/{name}/{stream}'
+            image = file[key + '/image'][indices[key][i]]
+            if stream == 'depth':
+                image = (image.astype(np.float32) * metadata['cameras'][name]['depth_scale_m'])[..., None]
+            target = f'observation.images.{name}' if stream == 'rgb' else f'observation.depth.{name}'
+            frame[target] = image
+    return frame
+
+
+def export(source, destination, repo_id, *, fps=30, robot_tolerance_s=.04, camera_tolerance_s=None):
+    require_lerobot()
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     source, destination = Path(source).resolve(), Path(destination).resolve()
     if destination.exists():
         raise FileExistsError('Export destination must be new; source recordings are immutable')
-    paths = sorted((source/'accepted').glob('episode_*.hdf5'))
-    if not paths:
-        raise ValueError('No accepted source episodes')
+    paths = episode_paths(source)
     reference = None
     plans = []
     # Validate every source/alignment before creating any export output.
@@ -109,20 +105,8 @@ def export(source, destination, repo_id, *, fps=30, robot_tolerance_s=.04, camer
             grid, indices, offsets = alignment(file, fps, robot_tolerance_s, camera_tolerance_s)
             plans.append((path, metadata, grid, indices, offsets))
     metadata = plans[0][1]
-    names = [f'{side}.{joint}' for side in metadata['sides'] for joint in JOINTS+('gripper',)]
-    features = {key:dict(dtype='float32', shape=(len(names),), names=names)
-                for key in ('observation.state','action')}
-    for name, cfg in metadata['config']['cameras'].items():
-        for stream in cfg['streams']:
-            key = f'observation.images.{name}' if stream == 'rgb' else f'observation.depth.{name}'
-            features[key] = dict(dtype='video', shape=(cfg['height'], cfg['width'], 3 if stream == 'rgb' else 1),
-                                 names=['height','width','channels'])
-            if stream == 'depth':
-                features[key]['info'] = dict(is_depth_map=True, depth_unit='m')
-    dataset = LeRobotDataset.create(repo_id=repo_id, root=destination, fps=fps,
-        robot_type='quest_viperx', features=features, use_videos=True, video_backend='pyav',
-        rgb_encoder=RGBEncoderConfig(vcodec='h264', pix_fmt='yuv420p', crf=18, preset='fast'),
-        image_writer_threads=2, encoder_threads=2)
+    names = features_for(metadata)['action']['names']
+    dataset = create_dataset(destination, repo_id, metadata, fps)
     report = dict(source=str(source), fps=fps, lerobot_version=version('lerobot'),
                   timing='Host reception alignment, not hardware-synchronized exposure',
                   units=dict(joints='rad', gripper='calibrated aperture, 0 closed / 1 open', depth='m'), episodes=[])
@@ -130,19 +114,7 @@ def export(source, destination, repo_id, *, fps=30, robot_tolerance_s=.04, camer
         for path, metadata, grid, indices, offsets in plans:
             with h5py.File(path, 'r') as file:
                 for i in range(len(grid)):
-                    frame = dict(task=metadata['config']['task'])
-                    for target, kind in (('observation.state','observations'),('action','actions')):
-                        frame[target] = np.concatenate([file[f'streams/robot/{s}/{kind}/qpos'][indices[f'streams/robot/{s}/{kind}'][i]]
-                                                       for s in metadata['sides']]).astype(np.float32)
-                    for name, cfg in metadata['config']['cameras'].items():
-                        for stream in cfg['streams']:
-                            key = f'streams/cameras/{name}/{stream}'
-                            image = file[key+'/image'][indices[key][i]]
-                            if stream == 'depth':
-                                scale = metadata['cameras'][name]['depth_scale_m']
-                                image = (image.astype(np.float32)*scale)[...,None]
-                            target = f'observation.images.{name}' if stream == 'rgb' else f'observation.depth.{name}'
-                            frame[target] = image
+                    frame = frame_at(file, metadata, indices, i)
                     dataset.add_frame(frame)
                 dataset.save_episode(parallel_encoding=False)
                 # Full source indices and offsets permit inspection of every pair.
@@ -158,6 +130,8 @@ def export(source, destination, repo_id, *, fps=30, robot_tolerance_s=.04, camer
     finally:
         dataset.finalize()
     loaded = LeRobotDataset(repo_id, root=destination, video_backend='pyav', depth_output_unit='m')
+    if loaded.meta.info.codebase_version != 'v3.0':
+        raise RuntimeError('Expected LeRobot dataset v3.0')
     if len(loaded) != sum(p[2].size for p in plans):
         raise RuntimeError('LeRobot readback frame count differs')
     # Decode source boundaries of every exported episode, including image streams.
@@ -174,8 +148,8 @@ def export(source, destination, repo_id, *, fps=30, robot_tolerance_s=.04, camer
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source', type=Path)
-    parser.add_argument('destination', type=Path)
+    parser.add_argument('source', type=Path, help='Dataset root, accepted directory, or saved HDF5 episode')
+    parser.add_argument('destination', type=Path, help='New LeRobot v3 output directory')
     parser.add_argument('--repo-id', required=True)
     parser.add_argument('--fps', type=int, default=30)
     parser.add_argument('--robot-tolerance-s', type=float, default=.04)

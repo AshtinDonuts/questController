@@ -1,5 +1,7 @@
 # Quest → physical ALOHA / dual ViperX
 
+Use the `quest_ros` Conda environment for hardware launches, including `lishan_cupstack.json`: run `conda activate quest_ros` first, or use `conda run -n quest_ros --no-capture-output` (no activation required).
+
 This hardware path uses the local `alohaX_lerobot_fork` Dynamixel interface and the existing Mink model. It is separate from `python -m webxr_teleop.run`, which remains simulator-only. **Mock is the default. No physical motor bus is opened in mock mode.**
 
 Optional [native HDF5 dataset recording](../../docs/dataset_recording.md) adds

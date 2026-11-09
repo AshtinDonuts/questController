@@ -1,7 +1,7 @@
-# Native HDF5 demonstration recording
+# HDF5 and LeRobot v3 demonstration recording
 
 Dataset recording is opt-in on the hardware supervisor. Motor workers keep sole
-ownership of the arms; a separate process owns cameras and HDF5. The existing
+ownership of the arms; a separate process owns cameras and dataset writing. The existing
 measured-feedback twin and diagnostic session video continue independently.
 
 ## Configuration
@@ -54,6 +54,14 @@ depth scale and depth-to-RGB extrinsics. OpenCV captures RGB with host reception
 timestamps. Serial numbers and shapes are never inherited from the motor rig.
 Paths in recording JSON are relative to that JSON file. Camera names are simple
 identifiers; resolution and FPS are required. Unsupported shapes fail capture.
+
+Startup checks configured RealSense serials against connected devices before
+opening streams. A missing device raises an error naming the camera and serial
+(for example, `Required recording camera not connected: top (RealSense serial
+231622302829)`). Check USB connection/power and the configured serial. Acquisition
+errors identify the camera/device; heartbeat and warmup timeouts include the last
+reported stage of cameras that are not ready. Motor workers start only after
+recording camera warmup succeeds.
 
 `webxr_teleop/datasets/example_mock.json` uses synthetic RGB/depth and is accepted
 only with mock motors. It is a test configuration, not a physical camera default.
@@ -191,13 +199,91 @@ Use `--save /path/to/new-recording.rrd` for a headless Rerun export that can be
 opened later. Existing output files are refused. Replay only reads HDF5 files;
 it does not connect to motors, cameras or the running hardware supervisor.
 
+## Native LeRobot v3 recording
+
+HDF5 remains the default. Select native LeRobot v3 output with the project-root
+`recording_lerobot_v3.json`, or add these fields to a copy of your recording JSON:
+
+```json
+{
+  "dataset_dir": "./demonstrations/pick_place_v3",
+  "format": "lerobot_v3",
+  "lerobot": {
+    "repo_id": "local/pick-place",
+    "fps": 30,
+    "robot_tolerance_s": 0.04,
+    "camera_tolerance_s": null
+  },
+  "task": "Place the red block in the tray",
+  "display_data": false,
+  "cameras": {}
+}
+```
+
+Copy your camera map into `cameras` to include RGB/depth. The supplied root
+configuration copies the current left-arm and top camera settings from
+`recording.json`, uses a new output directory, and leaves preview disabled.
+`repo_id` identifies the local dataset; recording never uploads it.
+
+Install `requirements-dataset-lerobot.txt` in a separate Python 3.12+ environment.
+This includes the pinned LeRobot 0.6.1 writer, camera SDK and a NumPy 2 compatible
+Rerun 0.22.1 preview. Do not upgrade the existing motor-driver or HDF5 recording
+environment. Select this interpreter with the existing `recording-python` option
+and the new JSON with `recording-config` on your normal recording launch. Follow
+the endpoint checks above and keep the measured-feedback `twin` option explicit
+on live launches. This configuration does not start hardware by itself.
+
+The training dataset is **`dataset_dir/lerobot/`**, directly readable by the
+official `LeRobotDataset` loader. It contains v3.0 `meta/`, Parquet data shards
+and RGB/depth videos. State/action ordering, units, causal alignment and timing
+tolerances match the offline exporter below. Each pause is aligned separately;
+wall-clock pauses are removed from the training timeline. Uniform-rate alignment
+and video encoding are not lossless native-rate capture; choose HDF5 when the
+original asynchronous streams and lossless pixels are required.
+
+Start, save, discard, pause, abort and episode limits use the existing controls.
+During capture, training streams are staged in a disk-backed SQLite attempt
+journal, without HDF5 or an episode-sized image buffer. Saving aligns those
+streams, feeds the official writer through bounded video queues, and finalizes
+the dataset before acknowledging success. The background finalizer keeps camera
+queues and recorder heartbeats serviced. A healthy save can exceed five seconds;
+shutdown allows up to 120 seconds for an in-flight save after motor shutdown.
+
+Accepted attempts leave provenance/alignment reports in
+`dataset_dir/attempts/episode_NNNNNN.saved.json`; their staging files are removed.
+Discarded/aborted attempt journals stay in `attempts/` and never enter training
+data. Unfinished `.partial.sqlite` journals remain quarantined after a crash;
+they are not automatically recovered or accepted. A `.committing` marker blocks
+further appends after an interrupted commit: inspect both the attempt and the
+LeRobot dataset before repairing or restoring it. A commit is not an atomic
+transaction across all LeRobot files. Disk usage grows with capture duration;
+periodic SQLite commits do not guarantee recovery of the most recent samples.
+
+Restarting with a compatible configuration appends episodes and restores the
+saved count. Changes to active arms, mock/live mode, rig mapping, base transforms,
+camera schema, dataset identity or output FPS require a new directory. Use separate
+`dataset_dir` values for HDF5 and LeRobot recording. The existing HDF5 replay and
+older ACT training bridge remain HDF5-only; load native v3 output with modern
+LeRobot tools instead.
+
 ## Offline LeRobot v3 export
+
+For ACT training with the currently installed older LeRobot fork, use the
+[native recording to ACT bridge](act_training_bridge.md). It preserves this
+recording format and prepares a separate v1.6 training copy, including RGB
+selection, action chunks, pause boundaries, normalization, and offline training.
 
 Use a separate Python 3.12+ virtual environment and install
 `requirements-dataset-export.txt`. It pins LeRobot 0.6.1 and CPU PyTorch; do not
 upgrade the working motor-driver environment. For this implementation's checks,
-the isolated environment is `/tmp/quest-hdf5-export` (temporary, not a permanent
+the isolated environment is `/tmp/quest-lerobot-v3` (temporary, not a permanent
 installation).
+
+The supplied hardware `launch.json` selects this environment with
+`recording_python: /tmp/quest-lerobot-v3/bin/python`, so native cupstack recording
+uses LeRobot 0.6.1 while motor workers keep their existing interpreter. This
+temporary environment must exist; use `--recording-python /path/to/python` to
+override it when moving to a permanent installation.
 
 ```bash
 /path/to/export-venv/bin/python -m webxr_teleop.datasets.export_lerobot \
@@ -205,7 +291,9 @@ installation).
   --repo-id local/pick-place --fps 30
 ```
 
-Only accepted, validated episodes are exported. Mock and live episodes must be
+The source can be a dataset root, its `accepted/` directory, or a single saved
+HDF5 episode. The destination must not already exist. Only accepted, validated
+episodes are exported. Mock and live episodes must be
 exported separately; mixed recording modes are rejected before output creation.
 Incompatible arm mappings,
 mounting geometry or camera schemas require separate exports. The source files
@@ -251,3 +339,28 @@ Recording returns use the same 5° per-joint opening tolerance as keyboard resta
 While an episode is recording, Quest B or terminal ← discards it, opens the grippers fully, then returns to opening once finalization completes, tracking is fresh and side grips are released. It does not start a new episode. Space, a fault, or shutdown cancels the pending return. Outside recording mode, B retains its powered-stop action.
 
 Tracking/reference loss pauses capture and freezes the episode timer. This includes a controller-source timeout detected by the motor worker: motion still enters powered hold at the existing 150 ms limit. Restore tracking, release selected grips and press X: successful alignment resumes the same episode without A or →. Paused intervals are omitted from captured streams and excluded from the duration limit. Native timestamps retain the gap, explicit pause/resume events mark it, and export aligns active segments separately. Other motor faults and explicit stops still abort; they never auto-resume.
+
+The native LeRobot regression suite (`tests/test_dataset_lerobot_v3.py`) checks
+official v3 readback, parity with offline conversion, RGB/depth decoding, discard,
+pause trimming, gap rejection, compatible resume, interrupted commit refusal, and
+a synthetic-camera recorder subprocess including episode limits after restart.
+
+### Native LeRobot save rejection
+
+A failed pre-commit alignment check now reports **EPISODE NOT SAVED** rather
+than killing the recorder. The saved count stays unchanged and the original
+samples, events and rejection reason remain in
+`attempts/episode_NNNNNN.rejected.sqlite`. No accepted dataset is modified.
+Release grips and align with X before recording a new attempt; the rejection
+does not resume motion or accept the invalid episode. Camera capture faults,
+transport failures, disk errors and interrupted commits remain fatal.
+
+On 2026-11-09 a cupstack save was rejected for a left-wrist RGB alignment gap
+of 142.3 ms (15 FPS default tolerance: 133.3 ms). Other sessions stopped for
+stale camera capture, controller tracking loss, an expired motor target and
+sleep settling error of 2.72 degrees. These are distinct causes behind the
+shared “Motion held” display. The standalone LeRobot sleep connection fix
+is not called by Quest teleoperation. Avoid overlapping heavy dataset export
+work with hardware capture while investigating timing; host load alone does
+not prove the cause of any particular interruption. No timing or geometric
+safety thresholds were relaxed by the save-rejection change.

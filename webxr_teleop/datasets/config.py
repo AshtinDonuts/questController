@@ -16,7 +16,8 @@ def load_config(path, *, mock=False):
     path = Path(path).resolve()
     cfg = json.loads(path.read_text())
     allowed = {'dataset_dir', 'task', 'cameras', 'display_data', 'episode_time_s',
-               'num_episodes', 'heartbeat_timeout_s', 'queue_frames', 'flush_interval_s'}
+               'num_episodes', 'heartbeat_timeout_s', 'queue_frames', 'flush_interval_s',
+               'format', 'lerobot'}
     if not isinstance(cfg, dict) or set(cfg)-allowed:
         raise ValueError('Unknown recording configuration fields')
     for key in ('dataset_dir', 'task'):
@@ -25,6 +26,24 @@ def load_config(path, *, mock=False):
     if not isinstance(cfg.get('cameras'), dict):
         raise ValueError('cameras must be explicit: a named camera map, or {} for proprioception only')
     cfg['dataset_dir'] = str((path.parent / cfg['dataset_dir']).resolve())
+    cfg.setdefault('format', 'hdf5')
+    if cfg['format'] not in ('hdf5', 'lerobot_v3'):
+        raise ValueError('format must be hdf5 or lerobot_v3')
+    options = cfg.get('lerobot', {})
+    if not isinstance(options, dict) or set(options) - {'repo_id', 'fps', 'robot_tolerance_s', 'camera_tolerance_s'}:
+        raise ValueError('Unknown lerobot recording settings')
+    if cfg['format'] == 'hdf5' and options:
+        raise ValueError('lerobot settings require format=lerobot_v3')
+    if cfg['format'] == 'lerobot_v3':
+        repo_id = options.get('repo_id')
+        if not isinstance(repo_id, str) or not re.fullmatch(r'[\w.-]+/[\w.-]+', repo_id):
+            raise ValueError('lerobot.repo_id must be namespace/dataset')
+        options['fps'] = number(options.get('fps', 30), 'lerobot.fps', integer=True)
+        options['robot_tolerance_s'] = number(options.get('robot_tolerance_s', .04), 'lerobot.robot_tolerance_s')
+        tolerance = options.get('camera_tolerance_s')
+        options['camera_tolerance_s'] = None if tolerance is None else number(tolerance, 'lerobot.camera_tolerance_s')
+        cfg['lerobot'] = options
+
     cfg.setdefault('display_data', True)
     if not isinstance(cfg['display_data'], bool):
         raise ValueError('display_data must be boolean')

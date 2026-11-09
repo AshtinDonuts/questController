@@ -34,6 +34,8 @@ def recording_status(config, recorder, *, state, reason, now_ns, aligned=False,
         stage=phase
         title={'warming':'CAMERA WARMUP','starting':'STARTING EPISODE','saving':'SAVING EPISODE'}[phase]
         hint='Wait for REC before moving.' if phase!='saving' else 'File finalizing. Arm joints held.'
+    elif phase=='finished' and recorder.get('last_status')=='rejected':
+        stage,title,hint='rejected','EPISODE NOT SAVED','Samples retained for inspection. Release grips; X: align, then A / →: record a new attempt.'
     elif phase=='recording' and state=='ARMED':
         stage,title,hint='recording','RECORDING','A / →: save | B / ←: discard + return | Space: STOP'
     elif complete:
@@ -57,12 +59,13 @@ def recording_status(config, recorder, *, state, reason, now_ns, aligned=False,
     if duration and phase=='recording':timing+=f' · {clock(max(0,duration-elapsed))} left'
     count=f'{saved} / {target or "∞"} saved'
     attempt=recorder.get('episode',-1)+1
+    message=(error or reason) if fault or error or state=='FAULT' else recorder.get('save_rejection') or reason
     return dict(phase=stage,title=title,hint=hint,task=config['task'],episode=attempt,
         saved=saved,target_episodes=target or '∞',elapsed_s=elapsed,
         episode_time_s=duration,remaining_s=max(0,duration-elapsed) if duration else None,
         episode_progress=min(1,elapsed/duration) if duration else None,
-        progress_text=timing,summary=f'{title} | {timing} | {count} | {hint} | {error or reason}'+(f' | {result}' if result else ''),
-        message=reason,recording_error=error,recording_result=result,
+        progress_text=timing,summary=f'{title} | {timing} | {count} | {hint} | {message}'+(f' | {result}' if result else ''),
+        message=message,recording_error=error,recording_result=result,
         recorder_phase=phase,last_status=recorder.get('last_status'),
         cameras=recorder.get('cameras',{}))
 

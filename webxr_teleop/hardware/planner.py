@@ -18,6 +18,10 @@ from .tracking import PoseDeadband, PoseMotionGate, tracking_deadbands
 ROOT = Path(__file__).resolve().parents[2]
 
 
+class InputExpired(ValueError):
+    """A stale job is rejected without terminating the planner process."""
+
+
 def make_model(profile, sides=SIDES):
     model = mujoco.MjModel.from_xml_path(str(ROOT/'scenes/dual_viperx_scene.xml'))
     for side in SIDES:
@@ -109,7 +113,7 @@ class Planner:
     def step(self, job):
         now=time.monotonic()
         if not 0 <= now-job['t'] <= TTL:
-            raise ValueError('Planner input expired')
+            raise InputExpired('Planner input expired')
         measured=job['measured']
         put_measured(self.model,self.data,self.profile,measured)
         start=self.data.qpos.copy()
@@ -201,7 +205,7 @@ class Planner:
                     self.origin.pop(s,None);self.grip_generation[s]=generation
                 hand=hands[s]; site=self.sites[s]
                 if hand is None or ('t' in hand and not 0<=now-hand['t']<=TTL):
-                    raise ValueError('Controller input expired at planner')
+                    raise InputExpired('Controller input expired at planner')
                 targets[s][6]=aperture_from_trigger(hand['trigger'])
                 if not hand['grip']:
                     self.origin.pop(s,None); freeze[s]=True
@@ -338,7 +342,11 @@ def run(sock, profile, sides=SIDES):
                 send(sock,dict(type='expired',epoch=job['epoch'],mode=job['mode'],seq=job['seq']))
                 continue
             started=time.monotonic()
-            target=dict(type='target',**planner.step(job))
+            try:
+                target=dict(type='target',**planner.step(job))
+            except InputExpired:
+                send(sock,dict(type='expired',epoch=job['epoch'],mode=job['mode'],seq=job['seq']))
+                continue
             target['planner_duration_ms']=1000*(time.monotonic()-started)
             target['planner_queue_age_ms']=1000*(started-job['t'])
             target['completed_t']=time.monotonic()

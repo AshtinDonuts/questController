@@ -138,3 +138,25 @@ def test_profile_transition_cannot_allow_target_to_expire_before_write(monkeypat
     assert feedback[0]['state']=='HOLD'
     assert feedback[0]['reason']=='Target expired before serial write'
     assert old['q'] not in writes and new['q'] not in writes
+
+
+@pytest.mark.parametrize('reason',['Planner input expired','Controller input expired at planner'])
+def test_planner_survives_input_expiry(monkeypatch,reason):
+    from webxr_teleop.hardware import planner
+    job=dict(t=10.,epoch=1,mode='teleop',seq=1,measured={})
+    batches=iter([[job],[dict(job,epoch=2,mode='hold',seq=2)],[dict(op='shutdown')]])
+    messages=[]
+    class FakePlanner:
+        def __init__(self,*args):pass
+        def step(self,job):
+            if job['seq']==1:raise planner.InputExpired(reason)
+            return dict(epoch=job['epoch'],mode=job['mode'],seq=job['seq'])
+    monkeypatch.setattr(planner,'Planner',FakePlanner)
+    monkeypatch.setattr(planner,'receive',lambda sock:next(batches))
+    monkeypatch.setattr(planner,'send',lambda sock,message:messages.append(message))
+    monkeypatch.setattr(planner.time,'monotonic',lambda:10.)
+    monkeypatch.setattr(planner.signal,'signal',lambda *args:None)
+    planner.run(SimpleNamespace(close=lambda:None),{})
+    assert [m['type'] for m in messages]==['expired','target']
+    assert messages[0]['epoch']==1
+    assert messages[1]['epoch']==2

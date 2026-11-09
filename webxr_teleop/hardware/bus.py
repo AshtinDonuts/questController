@@ -118,13 +118,15 @@ class LeRobotBus:
         reader = self.dxl.GroupSyncRead(self.bus.port_handler, self.bus.packet_handler, addr, size)
         for n in names:
             reader.addParam(self.bus.motors[n][0])
-        if reader.txRxPacket() != self.dxl.COMM_SUCCESS:
-            raise ConnectionError(f'Read failed: {name}')
+        comm = reader.txRxPacket()
+        if comm != self.dxl.COMM_SUCCESS:
+            raise ConnectionError(f'Read failed: {name}; comm={comm}; '
+                                  f'motor_ids={[self.bus.motors[n][0] for n in names]}')
         result = []
         for n in names:
             idx = self.bus.motors[n][0]
             if not reader.isAvailable(idx, addr, size):
-                raise ConnectionError(f'Missing feedback: {n}/{name}')
+                raise ConnectionError(f'Missing feedback: {n}/{name}; motor_id={idx}')
             result.append(reader.getData(idx, addr, size))
         return result
 
@@ -137,7 +139,10 @@ class LeRobotBus:
             raise ValueError('Firmware lacks required bus watchdog')
         allowed = ([0]*9, [1]*9) if self.startup_allowed else ([1]*9,)
         if r['Torque_Enable'] not in allowed or any(r['Hardware_Error_Status']):
-            raise ValueError('Expected uniform torque state and no motor errors; torque-off requires explicit startup')
+            raise ValueError('Expected uniform torque state and no motor errors; '
+                             f'torque={r["Torque_Enable"]}, hardware_errors={r["Hardware_Error_Status"]}, '
+                             f'startup_allowed={self.startup_allowed}; '
+                             'all motors must be uniformly off or on for explicit startup')
         if any(v & 8 for v in r['Drive_Mode']):
             raise ValueError('Automatic torque-on on goal update must be disabled')
         if any(v & 4 for v in r['Drive_Mode']):
@@ -185,7 +190,8 @@ class LeRobotBus:
         errors = self.register('Hardware_Error_Status')
         watchdog = self.register('Bus_Watchdog')
         if torque != ([0]*9 if torque_off else [1]*9) or any(errors) or any(x == 255 for x in watchdog):
-            raise RuntimeError('Motor torque/error/watchdog fault; no automatic recovery')
+            raise RuntimeError('Motor torque/error/watchdog fault; no automatic recovery; '
+                               f'torque={torque}, hardware_errors={errors}, watchdog={watchdog}')
         cap=self.verify_gripper_current()
         self.raw, self.last_q = raw, q[:]
         return q, dict(torque=not torque_off, errors=0, watchdog=watchdog,gripper_current_cap=cap,gripper_feedback=getattr(self,'gripper_feedback',None),gripper_motion_profile=getattr(self,'gripper_motion_profile',None),raw_position=raw.tolist(),calibrated_position=values.tolist())
@@ -370,7 +376,8 @@ class LeRobotBus:
                 comm,error=self.bus.packet_handler.write4ByteTxRx(
                     self.bus.port_handler,self.bus.motors[name][0],address,value)
                 if comm!=self.dxl.COMM_SUCCESS or error:
-                    raise ConnectionError(f'Opening {field} write failed')
+                    raise ConnectionError(f'Opening {field} write failed for {name} '
+                                          f'(id={self.bus.motors[name][0]}, comm={comm}, packet_error={error})')
             if self.register(field)!=desired:
                 raise ConnectionError(f'Opening {field} readback failed')
         if not enabled:self._opening_profiles=None

@@ -6,6 +6,23 @@ import time
 import numpy as np
 
 
+def check_realsense_devices(cameras):
+    """Reject disconnected configured devices before pipeline.start can wait."""
+    required = {name: cfg['device'] for name, cfg in cameras.items()
+                if cfg['backend'] == 'realsense'}
+    if not required:
+        return
+    import pyrealsense2 as rs
+    context = rs.context()
+    connected = {device.get_info(rs.camera_info.serial_number)
+                 for device in context.query_devices()}
+    missing = [f"{name} (RealSense serial {serial})" for name, serial in required.items()
+               if serial not in connected]
+    if missing:
+        raise RuntimeError('Required recording camera not connected: ' + ', '.join(missing)
+                           + '. Check USB connection/power and the recording configuration device serial.')
+
+
 class Camera:
     def __init__(self, name, config, capacity):
         self.name, self.config = name, config
@@ -34,7 +51,9 @@ class Camera:
         except queue.Full:
             self.error=f'{self.name}: capture queue overflow; source frames were not silently dropped'
         except Exception as exc:
-            self.error = f'{self.name}: {type(exc).__name__}: {exc}'
+            identity = f"{self.config['backend']} device {self.config.get('device', 'synthetic')}"
+            self.error = (f'{self.name} ({identity}): {type(exc).__name__}: {exc}. '
+                          'Check camera connection/power, stream settings, and whether another application is using it.')
 
     def _synthetic(self):
         cfg = self.config
@@ -108,7 +127,15 @@ class Camera:
                     last_frames[stream]=number
                     self.emit(stream, np.asanyarray(frame.get_data()), frame.get_frame_number(),
                               frame.get_timestamp(), str(frame.get_frame_timestamp_domain()))
-        finally:
+        except BaseException:
+            # A disconnected/reset device can also fail during stop. Preserve
+            # the acquisition failure rather than replacing it with cleanup.
+            try:
+                pipeline.stop()
+            except Exception:
+                pass
+            raise
+        else:
             pipeline.stop()
 
     def healthy(self, now_ns):

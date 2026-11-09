@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 @contextmanager
-def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, slow_planner=False, full_resolution=False, worker_hold_reason=None):
+def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, slow_planner=False, full_resolution=False, worker_hold_reason=None, worker_fault_code=None, slow_record_start=False):
     if not QUEST_PYTHON.exists() or not RECORD_PYTHON.exists():
         pytest.skip('Quest and recording interpreters required')
     probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
@@ -27,6 +27,7 @@ def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, s
     endpoint=str(private/'control.sock')
     config=json.loads((ROOT/'webxr_teleop/datasets/example_mock.json').read_text())
     config.update(dataset_dir=str(tmp_path/'dataset'),display_data=False)
+    if slow_record_start:config['queue_frames']=64
     if full_resolution:
         camera=dict(backend='synthetic',width=640,height=480,fps=30,streams=['rgb','depth'])
         config['cameras']={name:dict(camera) for name in ('left_arm','top')}
@@ -67,7 +68,10 @@ def receive(sock):
     for message in messages:
         if marker.exists() and message.get('type') == 'feedback' and message.get('state') == 'ARMED':
             marker.unlink()
-            message.update(state='HOLD', reason={worker_hold_reason!r})
+            if {worker_fault_code!r} is not None:
+                messages.append(dict(type='fault',code={worker_fault_code!r},recoverable=True,reason={worker_hold_reason!r}))
+            else:
+                message.update(state='HOLD', reason={worker_hold_reason!r})
             break
     return messages
 run.receive = receive
@@ -75,10 +79,26 @@ if __name__ == '__main__':
     run.main()
 ''')
         entry=[str(runner)]
+    recording_python=RECORD_PYTHON
+    if slow_record_start:
+        recording_python=tmp_path/'slow_recorder'
+        recording_python.write_text(f'''#!{RECORD_PYTHON}
+import sys, time
+sys.path.insert(0, {str(ROOT)!r})
+from webxr_teleop.datasets import recorder
+original_init = recorder.Episode.__init__
+def delayed_init(self, *args, **kwargs):
+    time.sleep(.4)
+    original_init(self, *args, **kwargs)
+recorder.Episode.__init__ = delayed_init
+sys.argv = [sys.argv[2], *sys.argv[3:]]
+recorder.main()
+''')
+        recording_python.chmod(0o755)
     proc=subprocess.Popen([str(QUEST_PYTHON),*entry,
         '--mode','mock','--sequence','--no-twin','--side',side,'--port',str(port),'--socket',endpoint,
         '--output',str(tmp_path/'session'),'--recording-config',str(config_path),
-        '--recording-python',str(RECORD_PYTHON),'--seconds','45']+extra,
+        '--recording-python',str(recording_python),'--seconds','45']+extra,
         cwd=ROOT,env=dict(os.environ,MUJOCO_GL='egl'),stdout=log,stderr=log,start_new_session=process_group)
     def control(command='status',request_id=None):
         client=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);client.settimeout(2)
@@ -462,3 +482,41 @@ def test_discard_returns_to_opening_without_starting_capture(tmp_path,source):
         asyncio.run(exercise(port,control,scenario))
     assert len(list((tmp_path/'dataset/discarded').glob('*.hdf5')))==1
     assert not list((tmp_path/'dataset/accepted').glob('*.hdf5'))
+
+
+def test_gripper_fault_next_episode_recovers_and_can_record_again(tmp_path):
+    with supervisor(tmp_path,'left',worker_hold_reason='Gripper encoder outside calibration',
+                    worker_fault_code='gripper_range') as (_,port,control):
+        async def scenario(state,wait,align):
+            (tmp_path/'inject-worker-hold').touch()
+            await wait(lambda s:s['state']=='FAULT' and s['recording'].get('last_status')=='aborted')
+            await asyncio.sleep(.5)
+            await asyncio.to_thread(control,'record-next')
+            await wait(lambda s:s['state']=='READY',seconds=15)
+            await align()
+            await asyncio.to_thread(control,'record-start')
+            await wait(lambda s:s['recording']['phase']=='recording')
+            await asyncio.sleep(.3)
+            await asyncio.to_thread(control,'record-save')
+            await wait(lambda s:s['recording']['saved']==1)
+        asyncio.run(exercise(port,control,scenario,absent='right'))
+    assert len(list((tmp_path/'dataset/aborted').glob('*.hdf5')))==1
+    assert len(list((tmp_path/'dataset/accepted').glob('*.hdf5')))==1
+
+
+def test_quest_a_slow_record_start_keeps_workers_armed(tmp_path):
+    with supervisor(tmp_path, slow_record_start=True) as (_,port,control):
+        async def scenario(state,wait,align):
+            state['a']=True
+            await wait(lambda s:s['recording']['phase']=='starting')
+            await asyncio.sleep(.2)
+            status=await asyncio.to_thread(control)
+            assert status['state']=='ARMED',status
+            state['a']=False
+            status=await wait(lambda s:s['recording']['phase']=='recording')
+            assert status['state']=='ARMED',status
+            await asyncio.sleep(.3)
+            assert (await asyncio.to_thread(control))['state']=='ARMED'
+        asyncio.run(exercise(port,control,scenario,start=False))
+    rows=[json.loads(line) for line in (tmp_path/'session/hardware.jsonl').read_text().splitlines()]
+    assert not any(row['event']=='hold' and 'expired' in row.get('reason','').lower() for row in rows)

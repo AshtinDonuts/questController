@@ -133,10 +133,12 @@ if __name__=='__main__':
 '''
 
 
-@pytest.mark.parametrize('kind,side',[('ik','left'),('drift','left'),('gripper','left'),('geometry','left'),('ik','both')])
+@pytest.mark.parametrize('kind,side',[('ik','left'),('drift','left'),('gripper','left'),('gripper_reset','left'),('geometry','left'),('ik','both')])
 def test_keyboard_restart_from_latched_fault_without_headset(tmp_path,kind,side):
     import json,os,pty,signal,socket,subprocess,sys,time
     from webxr_teleop.hardware.run import DEFAULT_PROFILE,ROOT
+    recovery_key=b'r' if kind=='gripper_reset' else b'k'
+    if kind=='gripper_reset':kind='gripper'
     p=json.loads(DEFAULT_PROFILE.read_text());p['injected_fault']=kind
     sides=('left','right') if side=='both' else (side,)
     for s in sides:
@@ -173,7 +175,7 @@ def test_keyboard_restart_from_latched_fault_without_headset(tmp_path,kind,side)
                 assert 'Hold drift' in before['reason'];(tmp_path/'drift').unlink()
             if kind=='gripper':
                 assert 'Gripper encoder outside calibration' in before['reason']
-                os.write(master,b'k');time.sleep(.1)
+                os.write(master,recovery_key);time.sleep(.1)
                 rejected=control()
                 assert rejected['state']=='FAULT' and 'gripper encoder still outside' in rejected['reason']
                 (tmp_path/'drift').unlink()
@@ -183,7 +185,7 @@ def test_keyboard_restart_from_latched_fault_without_headset(tmp_path,kind,side)
                 return
             time.sleep(.4)
             recovery_apertures={s:f['q'][6] for s,f in control()['feedback'].items()}
-            os.write(master,b'k')  # Actual keyboard shortcut, no Enter.
+            os.write(master,recovery_key)  # Actual reset/restart shortcut, no Enter.
             moving=wait('OPENING')
             assert moving['processes']['planner']!=before['processes']['planner']
             assert moving['processes']['motors']==before['processes']['motors']

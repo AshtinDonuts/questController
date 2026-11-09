@@ -1,8 +1,15 @@
 # Dataset recording workflow
 
+For hardware recording, including `lishan_cupstack.json`, use the `quest_ros` Conda environment: `conda activate quest_ros`, or the `conda run -n quest_ros --no-capture-output` prefix in launch examples (no activation required).
+
 The recorder stores lossless HDF5 episodes with native camera and robot timing.
 Cameras are selected explicitly in the recording configuration; there are no
 default cameras. Accepted episodes can later be exported offline to LeRobot v3.
+Native LeRobot v3 recording is also available: use `recording_lerobot_v3.json`
+with a separate Python 3.12+ interpreter installed from
+`requirements-dataset-lerobot.txt`. Its accepted training dataset is written to
+`dataset_dir/lerobot/`; recording controls stay the same. See
+[native LeRobot v3 configuration](docs/dataset_recording.md#native-lerobot-v3-recording).
 
 ## Enable dataset recording for left, right or dual
 
@@ -12,25 +19,18 @@ controls below apply only when the dataset recorder is enabled. The separate
 MuJoCo diagnostic video is not a camera dataset or an accepted episode.
 
 1. Follow [QUICKSTART.md](QUICKSTART.md) to select active arms and complete
-   endpoint-ownership checks before launch.
+  endpoint-ownership checks before launch.
 2. Use the populated project-root `recording.json`. Edit its task and dataset
-   directory as needed; the left-arm and top cameras are already configured. `cameras` is required: use `{}` explicitly for proprioception-only
+  directory as needed; the left-arm and top cameras are already configured. `cameras` is required: use `{}` explicitly for proprioception-only
    recording. The synthetic `example_mock.json` cannot be used with live motors.
 3. Add `--recording-config recording.json` to the selected launch.
-   For example, after those checks and with the selected arms clear to move:
-
-   ```bash
-   conda run -n quest_ros --no-capture-output python -m webxr_teleop.hardware.run \
-     --config webxr_teleop/hardware/launch.json --side both --twin \
-     --recording-config recording.json
-   ```
-
+  For example, after those checks and with the selected arms clear to move:
    Replace `both` with `left` or `right` for single-arm collection. The preset
    supplies the required `--sequence`; recording does not select the arms.
    Alternatively, add `recording_config` to a custom launch JSON (paths there
    resolve relative to that JSON). Explicit CLI options override launch defaults.
 4. Launching prepares the recorder; it does not start an episode. Wait for
-   camera warmup, opening arrival and alignment, then start using → or Quest A.
+  camera warmup, opening arrival and alignment, then start using → or Quest A.
 
 To return to non-recording teleoperation, end the current session orderly and
 relaunch without the recording option or launch-JSON key. Repeat endpoint
@@ -84,15 +84,17 @@ Space, hardware/recorder faults and shutdown still abort the episode.
 
 ## Terminal keymap
 
-| Key | Action |
-| --- | --- |
-| **→** | Start recording when ready; save while recording. |
-| **←** | Discard the active episode. |
-| **↑** | Prepare opening for the first or next episode. |
-| **Esc** | Sleep, confirm torque-off, then exit the recording session. |
-| **Space** | Immediate powered stop. |
-| **X** | Align from the left controller for left-only, right controller for right/dual. |
-| **S** | Request sleep. |
+
+| Key       | Action                                                                         |
+| --------- | ------------------------------------------------------------------------------ |
+| **→**     | Start recording when ready; save while recording.                              |
+| **←**     | Discard the active episode.                                                    |
+| **↑**     | Prepare opening for the first or next episode.                                 |
+| **Esc**   | Sleep, confirm torque-off, then exit the recording session.                    |
+| **Space** | Immediate powered stop.                                                        |
+| **X**     | Align from the left controller for left-only, right controller for right/dual. |
+| **S**     | Request sleep.                                                                 |
+
 
 Quest controls remain unchanged: **A** starts/saves and requests return after
 finalization; **B** discards and returns to opening; **Space** stops immediately; **X** aligns with selected grips released;
@@ -101,17 +103,19 @@ and triggers control the grippers.
 
 ## Arm behavior at each phase
 
-| Phase | Arm behavior |
-| --- | --- |
-| **Camera warmup** | No opening motion yet. Configured cameras initialize before motor workers start. |
-| **Opening** | Active arms follow the supervised opening trajectory and move grippers to the saved ceremony aperture. |
-| **Ready / alignment** | Arms hold position. Release selected grips and press Quest X or terminal X to align. |
-| **Recording** | Quest grips move the matching arms; releasing a grip holds that arm. Triggers control grippers independently. |
-| **Saving / discarded** | Capture ends; arm joints hold the end pose while grippers open fully. File processing continues separately. |
-| **Between episodes** | Arms remain held until ↑ requests return. There is no automatic return or recording restart. |
-| **Returning** | Arms move to opening and grippers move to the saved ceremony aperture. Wait for measured arrival and settling, align with X, then press → to record. |
-| **Stop / recording fault** | Motion stops into powered hold; the active episode is aborted. |
-| **Sleep** | Arms follow the configured sleep trajectory. Torque switches off only after confirmed completion. |
+
+| Phase                      | Arm behavior                                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Camera warmup**          | No opening motion yet. Configured cameras initialize before motor workers start.                                                                     |
+| **Opening**                | Active arms follow the supervised opening trajectory and move grippers to the saved ceremony aperture.                                               |
+| **Ready / alignment**      | Arms hold position. Release selected grips and press Quest X or terminal X to align.                                                                 |
+| **Recording**              | Quest grips move the matching arms; releasing a grip holds that arm. Triggers control grippers independently.                                        |
+| **Saving / discarded**     | Capture ends; arm joints hold the end pose while grippers open fully. File processing continues separately.                                          |
+| **Between episodes**       | Arms remain held until ↑ requests return. There is no automatic return or recording restart.                                                         |
+| **Returning**              | Arms move to opening and grippers move to the saved ceremony aperture. Wait for measured arrival and settling, align with X, then press → to record. |
+| **Stop / recording fault** | Motion stops into powered hold; the active episode is aborted.                                                                                       |
+| **Sleep**                  | Arms follow the configured sleep trajectory. Torque switches off only after confirmed completion.                                                    |
+
 
 **Saving opens the grippers while retaining arm-joint hold. Exiting recording
 (Esc, q, Ctrl+C or SIGTERM) requests sleep and waits for confirmed torque-off.
@@ -121,18 +125,20 @@ a second exit request ends immediately in hold.**
 ## Collection sequence
 
 1. Before launch, follow the endpoint-ownership checks in [AGENTS.md](AGENTS.md).
-   Live launches include the measured-feedback digital twin with `--twin`.
+  Live launches include the measured-feedback digital twin with `--twin`.
 2. Wait for camera warmup, opening arrival and settling. Release selected grips and
-   press Quest X or terminal X to align.
+  press Quest X or terminal X to align.
 3. Press → and wait for **REC** before moving.
 4. Teleoperate the demonstration. Rerun shows cameras and joint plots; Quest
-   shows recording status, task and timer.
+  shows recording status, task and timer.
 5. Press → to save, or ← to discard. The arm joints hold the end pose while grippers open fully and the file
-   finalizes. Wait for gripper settling before requesting return.
+  finalizes. Wait for gripper settling before requesting return.
 6. Press ↑ to return to opening. Reset the objects, wait for settling, align
-   with X and press → to begin another episode.
+  with X and press → to begin another episode.
 7. Press Esc, q or Ctrl+C to sleep and exit the recording session. S or holding
-   Quest Y requests sleep without closing the session.
+  Quest Y requests sleep without closing the session.
+
+
 
 ## Replay saved episodes
 
@@ -159,6 +165,18 @@ Existing output files are refused. Replay reads saved files only and does not
 connect to the robot or cause motion; no hardware launch is needed.
 
 ## Recorded data and export
+
+The native recording format remains the source of truth. For the installed
+LeRobot ACT training fork, see [ACT training bridge](docs/act_training_bridge.md)
+forcd /home/King/Desktop/QuestController && \
+
+conda run -n quest_ros --no-capture-output python -m webxr_[teleop.hardware.run](http://teleop.hardware.run) \
+
+  --config webxr_teleop/hardware/launch.json --side both --twin \
+
+  --recording-config lishan_headphones_real.json
+
+   offline preparation, a loss/backward smoke check, and training commands.
 
 Each episode contains camera frames, timestamps, measured joints, confirmed
 motor targets, controller input and rig/calibration metadata. Saving defaults

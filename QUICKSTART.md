@@ -1,5 +1,7 @@
 # Quest hardware quickstart
 
+Use the `quest_ros` Conda environment, including for `lishan_cupstack.json`. Run `conda activate quest_ros` first, or use the `conda run -n quest_ros --no-capture-output` prefix shown below (no activation required).
+
 Choose one command below and paste it into a terminal. All paths and camera
 settings are already populated; no configuration setup is needed.
 
@@ -118,7 +120,7 @@ The episode timer freezes when capture ends; saved count increases only after
 the file has finalized. Episode attempt numbers include discards; the saved
 count is the progress toward the collection target.
 
-## Without dataset recording
+## sodWithout dataset recording
 
 These commands save the diagnostic session MP4 and logs, with no HDF5 episodes
 or camera acquisition.
@@ -153,7 +155,7 @@ conda run -n quest_ros --no-capture-output python -m webxr_teleop.hardware.run \
 
 
 
-## Settings already in use
+## Settings alreadsody in use
 
 All commands load [launch.json](webxr_teleop/hardware/launch.json).
 `--side left`, `right` or `both` overrides its arm selection and activates the

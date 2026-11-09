@@ -269,6 +269,9 @@ def main():
         if bus:
             try:
                 if args.mode!='observe' and not getattr(bus,'torque_release_attempted',False):bus.opening_speed(False)
+            except Exception as exc:
+                # Preserve the original fault; cleanup must still close the bus.
+                print(f'{args.side}: profile restoration failed during cleanup: {exc}',flush=True)
             finally:bus.close()
         sock.close()
 

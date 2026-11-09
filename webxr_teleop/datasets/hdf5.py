@@ -165,6 +165,9 @@ class Episode:
             os.close(fd)
         return destination
 
+    def flush(self):
+        self.file.flush()
+
     def close_partial(self):
         if self.file.id.valid:
             self.file.close()

@@ -1,0 +1,39 @@
+{
+  "dataset_dir": "./teleop_sessions/lerobot_v3",
+  "task": "Move the object to the target",
+  "display_data": false,
+  "episode_time_s": 60,
+  "num_episodes": 2,
+  "queue_frames": 8,
+  "flush_interval_s": 1,
+  "heartbeat_timeout_s": 1,
+  "cameras": {
+    "left_arm": {
+      "backend": "realsense",
+      "device": "218622270994",
+      "width": 640,
+      "height": 480,
+      "fps": 30,
+      "streams": [
+        "rgb",
+        "depth"
+      ]
+    },
+    "top": {
+      "backend": "realsense",
+      "device": "218622274350",
+      "width": 640,
+      "height": 480,
+      "fps": 30,
+      "streams": [
+        "rgb",
+        "depth"
+      ]
+    }
+  },
+  "format": "lerobot_v3",
+  "lerobot": {
+    "repo_id": "local/quest-demonstrations",
+    "fps": 30
+  }
+}

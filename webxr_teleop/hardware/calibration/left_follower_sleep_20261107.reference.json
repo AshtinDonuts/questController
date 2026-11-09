@@ -1,0 +1,460 @@
+{
+  "operator_reference": "User confirmed real left robot is at sleep pose and requested recalibration on 2026-11-07.",
+  "method": "Software-only encoder offset reference alignment; no motor writes; retain signs, gripper calibration, model pose targets and right-arm configuration.",
+  "capture": {
+    "samples": [
+      [
+        2045,
+        811,
+        811,
+        3121,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3121,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3121,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2021,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3121,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ],
+      [
+        2045,
+        811,
+        811,
+        3122,
+        3122,
+        2020,
+        3555,
+        2063,
+        2601
+      ]
+    ],
+    "raw": [
+      2045,
+      811,
+      811,
+      3122,
+      3122,
+      2020,
+      3555,
+      2063,
+      2601
+    ],
+    "preflight": {
+      "Model_Number": [
+        1120,
+        1120,
+        1120,
+        1120,
+        1120,
+        1120,
+        1120,
+        1020,
+        1020
+      ],
+      "Firmware_Version": [
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49
+      ],
+      "Torque_Enable": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "Operating_Mode": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        5
+      ],
+      "Drive_Mode": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "Secondary_ID": [
+        255,
+        255,
+        2,
+        255,
+        4,
+        255,
+        255,
+        255,
+        255
+      ],
+      "Hardware_Error_Status": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "Bus_Watchdog": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "Goal_Current": [
+        2047,
+        2047,
+        2047,
+        2047,
+        2047,
+        2047,
+        2047,
+        1193,
+        200
+      ],
+      "Current_Limit": [
+        2047,
+        2047,
+        2047,
+        2047,
+        2047,
+        2047,
+        2047,
+        1193,
+        200
+      ],
+      "Present_Velocity": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "Profile_Velocity": [
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        61
+      ],
+      "Profile_Acceleration": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        18
+      ],
+      "Homing_Offset": [
+        0,
+        0,
+        5,
+        0,
+        4294967288,
+        0,
+        0,
+        0,
+        0
+      ],
+      "gripper_current_cap": {
+        "operating_mode": 5,
+        "goal_current_counts": 200,
+        "current_limit_counts": 200,
+        "goal_current_ma": 538.0,
+        "current_limit_ma": 538.0,
+        "readback_verified": true
+      }
+    }
+  },
+  "source_calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/left_follower.json",
+  "source_sha256": "b325481613ae0ff601faa3a7ef0ee2415b029742ceed1a5cdadf15fec9726d31",
+  "homing_offset_before": [
+    2048,
+    3072,
+    3072,
+    -1024,
+    -1024,
+    2048,
+    -2048,
+    2048,
+    -2048
+  ],
+  "homing_offset_after": [
+    2053,
+    3073,
+    3073,
+    -968,
+    -968,
+    2051,
+    -4842,
+    2066,
+    -2048
+  ],
+  "calibrated_degrees_before": [
+    0.263671875,
+    198.720703125,
+    198.720703125,
+    184.39453125,
+    184.39453125,
+    2.4609375,
+    132.451171875,
+    -1.318359375,
+    20.57416343688965
+  ],
+  "calibrated_degrees_after": [
+    0.703125,
+    198.80859375,
+    198.80859375,
+    189.31640625,
+    189.31640625,
+    2.724609375,
+    -113.115234375,
+    0.263671875,
+    20.57416343688965
+  ],
+  "reference_calibrated_degrees": {
+    "waist": 0.703125,
+    "shoulder": 198.80859375,
+    "elbow": 189.31640625,
+    "forearm_roll": 2.724609375,
+    "wrist_angle": -113.115234375,
+    "wrist_rotate": 0.263671875
+  },
+  "model_rad_after": [
+    -0.04295146206079795,
+    -1.8990682154024239,
+    1.760669059873186,
+    0.06902913545485385,
+    -1.9742332740088202,
+    -0.04141748127291231
+  ],
+  "reference_model_rad": [
+    -0.04295146206079795,
+    -1.8990682154024239,
+    1.760669059873186,
+    0.06902913545485385,
+    -1.9742332740088202,
+    -0.04141748127291231
+  ],
+  "backup_profile": "/home/King/Desktop/QuestController/webxr_teleop/hardware/calibration/rig_before_left_sleep_20261107.json",
+  "limitations": "One operator-identified reference pose only. Does not prove joint directions, full-range geometry, opening trajectory or long-term electrical health.",
+  "validation": {
+    "fresh_feedback": {
+      "q": [
+        -0.04295146206079795,
+        -1.8990682154024239,
+        1.760669059873186,
+        0.06902913545485385,
+        -1.9742332740088202,
+        -0.04141748127291231,
+        0.20574162679425836
+      ],
+      "health": {
+        "torque": true,
+        "errors": 0,
+        "watchdog": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "gripper_current_cap": {
+          "operating_mode": 5,
+          "goal_current_counts": 200,
+          "current_limit_counts": 200,
+          "goal_current_ma": 538.0,
+          "current_limit_ma": 538.0,
+          "readback_verified": true
+        },
+        "gripper_feedback": {
+          "raw_count": 2601,
+          "closed_raw": 2472,
+          "open_raw": 3099,
+          "unclamped_aperture": 0.20574162679425836,
+          "outside_counts": 0.0,
+          "endpoint_tolerance_counts": 2,
+          "state": "in_range"
+        },
+        "gripper_motion_profile": null,
+        "raw_position": [
+          2045,
+          811,
+          811,
+          3122,
+          3122,
+          2020,
+          3555,
+          2063,
+          2601
+        ],
+        "calibrated_position": [
+          0.703125,
+          198.80859375,
+          198.80859375,
+          189.31640625,
+          189.31640625,
+          2.724609375,
+          -113.115234375,
+          0.263671875,
+          20.57416343688965
+        ]
+      },
+      "max_sleep_error_deg": 0.0878906249999997,
+      "torque_unchanged": true
+    },
+    "mujoco_matches_measured": true,
+    "regression_tests": "50 passed: test_hardware_startup.py, test_hardware_mirror.py, test_hardware_sequence.py (mock-only tests)",
+    "preview": "left_sleep_twin_20261107.png"
+  }
+}

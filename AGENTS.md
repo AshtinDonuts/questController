@@ -1,4 +1,13 @@
+# Implementation, fix and debug records
+
+- Record every implementation, fix and debugging activity in the project-root `WORK_LOG.md`, including documentation and configuration changes.
+- Append entries in chronological order (oldest first); never reorder or rewrite historical entries. Use an ISO 8601 timestamp with timezone and label each entry `Implementation`, `Fix` or `Debug`.
+- Limit each entry to at most 3 physical Markdown lines: timestamp/type and summary; affected files and findings or changes; validation outcome and any unresolved issue. Keep entries concise and distinguish verified results from assumptions.
+- Update the log as part of the work before handing it back to the user; do not record secrets or sensitive data.
+
 # Standing launch instructions
+
+- Use the `quest_ros` Conda environment for hardware launches, including `lishan_cupstack.json`: run `conda activate quest_ros` first, or use `conda run -n quest_ros --no-capture-output` as in the launch examples.
 
 The user explicitly requests that recurring `OSError: [Errno 98] Address already in use` failures be checked and resolved before each Quest hardware launch or launch-command handoff.
 

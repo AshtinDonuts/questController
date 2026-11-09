@@ -1,0 +1,445 @@
+{
+  "version": 1,
+  "watchdog_verified": false,
+  "table_top_z": 0.0,
+  "planes": {
+    "x_min": -0.4,
+    "x_max": 0.7,
+    "y_min": -0.5,
+    "y_max": 0.5,
+    "z_max": 0.75,
+    "clearance": 0.005
+  },
+  "arms": {
+    "left": {
+      "port": "/dev/ttyDXL_follower_left",
+      "calibration": "/home/King/Desktop/QuestController/webxr_teleop/hardware/calibration/left_follower_sleep_20261107.json",
+      "verified": true,
+      "verification_note": "User confirmed left encoder-to-MuJoCo motion directions and visual pose on 2026-10-16. Mapping copied from rig_mirror_reversed_v2.json; watchdog verification remains separate. On 2026-11-07 the operator confirmed the real left arm was in sleep pose and requested recalibration. Software encoder offsets were re-anchored to that saved reference, including both shadow motors; directions were preserved. This single-pose alignment does not independently verify directions or full-range geometry. On 2026-11-07 operator confirmed corrected wrist direction and position during opening with sign=-1 and original-calibration wrist offset=23 degrees. All primary-joint offsets are translated to the active calibration to match that tested diagnostic mapping; this is a coordinate conversion, not a new physical full-range verification.",
+      "sign": [
+        -1,
+        -1,
+        1,
+        -1,
+        -1,
+        -1
+      ],
+      "offset_deg": [
+        -1.318359375,
+        90.087890625,
+        93.359375,
+        6.943359375,
+        -222.56640625,
+        -0.52734375
+      ],
+      "home_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_gripper": 0.18285714285714286,
+      "lower_rad": [
+        -3.14158,
+        -1.85005,
+        -1.76278,
+        -3.14158,
+        -1.8675,
+        -3.14158
+      ],
+      "upper_rad": [
+        3.14158,
+        1.25664,
+        1.6057,
+        3.14158,
+        2.23402,
+        3.14158
+      ],
+      "base_position": [
+        -0.32,
+        0.0,
+        0.02
+      ],
+      "base_quaternion_wxyz": [
+        0.7071067811865477,
+        0.0,
+        0.0,
+        0.7071067811865477
+      ],
+      "finger_closed_m": 0.002,
+      "finger_open_m": 0.037,
+      "calibration_sha256": "cde3febbc2dcb751e3d3e37bcdcd1a4c7e4893e70b6a9253491da898b57dd86b",
+      "opening_rad": [
+        0.07363107781851078,
+        -0.983281685034696,
+        0.8433485487175725,
+        0.11811652066719437,
+        -0.5281666295000028,
+        0.016873788666742055
+      ],
+      "sequence_sources": {
+        "opening": {
+          "path": "/home/King/alohaX_lerobot_fork/.cache/poses/ceremony_pose.json",
+          "sha256": "d93ce7882d26edfb13583b2e67e1d70fd417ed3e52c91946974c9f68d73bb14e",
+          "arm": "left_follower",
+          "calibrated_degrees": {
+            "waist": -5.537109375,
+            "shoulder": 146.42578125,
+            "elbow": 141.6796875,
+            "forearm_roll": 0.17578125,
+            "wrist_angle": -192.3046875,
+            "wrist_rotate": -1.494140625
+          },
+          "sign": [
+            -1,
+            -1,
+            1,
+            -1,
+            -1,
+            -1
+          ],
+          "offset_deg": [
+            -1.318359375,
+            90.087890625,
+            93.359375,
+            6.943359375,
+            -222.56640625,
+            -0.52734375
+          ],
+          "gripper_policy": "Command saved ceremony aperture on recording-session opening/return; operator requested",
+          "gripper_aperture": 0.5087719345092774,
+          "original_import": {
+            "path": "/home/King/alohaX_lerobot_fork/.cache/poses/ceremony_pose.json",
+            "sha256": "d93ce7882d26edfb13583b2e67e1d70fd417ed3e52c91946974c9f68d73bb14e",
+            "arm": "left_follower",
+            "calibrated_degrees": {
+              "waist": -5.9765625,
+              "shoulder": 146.337890625,
+              "elbow": 136.7578125,
+              "forearm_roll": -0.087890625,
+              "wrist_angle": 53.26171875,
+              "wrist_rotate": -3.076171875
+            },
+            "sign": [
+              -1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "offset_deg": [
+              -1.7578125,
+              90.0,
+              88.4375,
+              6.6796875,
+              0.0,
+              -2.109375
+            ],
+            "gripper_policy": "Command saved ceremony aperture on recording-session opening/return; operator requested",
+            "gripper_aperture": 0.5087719345092774
+          },
+          "raw_reference": {
+            "waist": 2116,
+            "shoulder": 1407,
+            "elbow": 2580,
+            "forearm_roll": 2049,
+            "wrist_angle": 2654,
+            "wrist_rotate": 2083
+          },
+          "calibration_sha256": "cde3febbc2dcb751e3d3e37bcdcd1a4c7e4893e70b6a9253491da898b57dd86b",
+          "conversion_note": "Raw goals preserved from original-calibration opening test / captured sleep reference; calibrated_degrees expressed in active calibration, not copied unchanged from legacy JSON.",
+          "reference_evidence": "/home/King/alohaX_lerobot_fork/.cache/poses/ceremony_pose.json"
+        },
+        "sleep": {
+          "path": "/home/King/alohaX_lerobot_fork/.cache/poses/rest_pose.json",
+          "sha256": "4ad693b0d0790a78e0dad67f19e9c77c9c8533b7bebba1446f778bbbcc26b8a7",
+          "arm": "left_follower",
+          "calibrated_degrees": {
+            "waist": 0.703125,
+            "shoulder": 198.80859375,
+            "elbow": 189.31640625,
+            "forearm_roll": 2.724609375,
+            "wrist_angle": -113.115234375,
+            "wrist_rotate": 0.263671875
+          },
+          "sign": [
+            -1,
+            -1,
+            1,
+            -1,
+            -1,
+            -1
+          ],
+          "offset_deg": [
+            -1.318359375,
+            90.087890625,
+            93.359375,
+            6.943359375,
+            -222.56640625,
+            -0.52734375
+          ],
+          "gripper_policy": "Preserve current opening; source gripper is not commanded",
+          "original_import": {
+            "path": "/home/King/alohaX_lerobot_fork/.cache/poses/rest_pose.json",
+            "sha256": "4ad693b0d0790a78e0dad67f19e9c77c9c8533b7bebba1446f778bbbcc26b8a7",
+            "arm": "left_follower",
+            "calibrated_degrees": {
+              "waist": 0.703125,
+              "shoulder": 198.80859375,
+              "elbow": 189.31640625,
+              "forearm_roll": 2.724609375,
+              "wrist_angle": -113.115234375,
+              "wrist_rotate": 0.263671875
+            },
+            "sign": [
+              -1,
+              -1,
+              1,
+              -1,
+              1,
+              -1
+            ],
+            "offset_deg": [
+              -1.7578125,
+              90.0,
+              88.4375,
+              6.6796875,
+              0.0,
+              -2.109375
+            ],
+            "gripper_policy": "Preserve current opening; source gripper is not commanded"
+          },
+          "raw_reference": {
+            "waist": 2045,
+            "shoulder": 811,
+            "elbow": 3122,
+            "forearm_roll": 2020,
+            "wrist_angle": 3555,
+            "wrist_rotate": 2063
+          },
+          "calibration_sha256": "cde3febbc2dcb751e3d3e37bcdcd1a4c7e4893e70b6a9253491da898b57dd86b",
+          "conversion_note": "Raw goals preserved from original-calibration opening test / captured sleep reference; calibrated_degrees expressed in active calibration, not copied unchanged from legacy JSON.",
+          "reference_evidence": "/home/King/Desktop/QuestController/webxr_teleop/hardware/calibration/left_follower_sleep_20261107.reference.json"
+        }
+      },
+      "sequence_verified": false,
+      "sequence_verification_note": "Imported ALOHA targets; model limits, geometry and physical holding still require verification. Original raw opening target tested; elbow/wrist-rotation arrival tolerance was not satisfied. Operator visually confirmed wrist twin alignment. No full sequence verification granted.",
+      "sleep_rad": [
+        -0.035281558121369745,
+        -1.897534234614538,
+        1.67476613575159,
+        0.07363107781851078,
+        -1.9102833193849655,
+        -0.01380582709097077
+      ],
+      "sequence_authorized": true,
+      "sequence_authorization_note": "User explicitly approved live workflow, automatic powered opening startup and removal of sleep joint-limit rejection in this chat on 2026-10-16. This is operator authorization, not physical verification.",
+      "motor_tracking_profile": {
+        "velocity_counts": 14,
+        "acceleration_counts": 4
+      },
+      "gripper_current_cap_counts": 200,
+      "opening_gripper": 0.5087719345092774,
+      "calibration_reference": {
+        "kind": "operator_confirmed_sleep_pose",
+        "date": "2026-11-07",
+        "evidence": "/home/King/Desktop/QuestController/webxr_teleop/hardware/calibration/left_follower_sleep_20261107.reference.json",
+        "original_calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/left_follower.json",
+        "original_sha256": "b325481613ae0ff601faa3a7ef0ee2415b029742ceed1a5cdadf15fec9726d31",
+        "full_range_physically_verified": false
+      },
+      "wrist_mapping_evidence": "outputs/diagnostics/wrist_calibration_selection_20261107_180738_393721.json"
+    },
+    "right": {
+      "port": "/dev/ttyDXL_follower_right",
+      "calibration": "/home/King/alohaX_lerobot_fork/.cache/calibration/aloha_solo/right_follower.json",
+      "verified": true,
+      "verification_note": "User explicitly requested copying the left joint mapping and its verification status to the right on 2026-10-27. This is an operator-approved status copy, not an independent right-arm physical test. Left source note: User confirmed left encoder-to-MuJoCo motion directions and visual pose on 2026-10-16. Mapping copied from rig_mirror_reversed_v2.json; watchdog verification remains separate.",
+      "sign": [
+        -1,
+        -1,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "offset_deg": [
+        -1.7578125,
+        90.0,
+        88.4375,
+        6.6796875,
+        0.0,
+        -2.109375
+      ],
+      "home_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_rad": [
+        0.0,
+        -0.96,
+        1.16,
+        0.0,
+        -0.3,
+        0.0
+      ],
+      "initial_gripper": 0.18285714285714286,
+      "lower_rad": [
+        -3.14158,
+        -1.85005,
+        -1.76278,
+        -3.14158,
+        -1.8675,
+        -3.14158
+      ],
+      "upper_rad": [
+        3.14158,
+        1.25664,
+        1.6057,
+        3.14158,
+        2.23402,
+        3.14158
+      ],
+      "base_position": [
+        0.32,
+        0.0,
+        0.02
+      ],
+      "base_quaternion_wxyz": [
+        0.7071067811865477,
+        0.0,
+        0.0,
+        0.7071067811865477
+      ],
+      "finger_closed_m": 0.002,
+      "finger_open_m": 0.037,
+      "calibration_sha256": "b325481613ae0ff601faa3a7ef0ee2415b029742ceed1a5cdadf15fec9726d31",
+      "opening_rad": [
+        0.07363107781851078,
+        -0.983281685034696,
+        0.8433485487175725,
+        0.11811652066719437,
+        0.9295923574586986,
+        0.016873788666742055
+      ],
+      "sequence_sources": {
+        "opening": {
+          "path": "/home/King/alohaX_lerobot_fork/.cache/poses/ceremony_pose.json",
+          "sha256": "d93ce7882d26edfb13583b2e67e1d70fd417ed3e52c91946974c9f68d73bb14e",
+          "arm": "right_follower",
+          "calibrated_degrees": {
+            "waist": -5.9765625,
+            "shoulder": 146.337890625,
+            "elbow": 136.7578125,
+            "forearm_roll": -0.087890625,
+            "wrist_angle": 53.26171875,
+            "wrist_rotate": -3.076171875
+          },
+          "sign": [
+            -1,
+            -1,
+            1,
+            -1,
+            1,
+            -1
+          ],
+          "offset_deg": [
+            -1.7578125,
+            90.0,
+            88.4375,
+            6.6796875,
+            0.0,
+            -2.109375
+          ],
+          "gripper_policy": "Command saved ceremony aperture on recording-session opening/return; operator requested",
+          "gripper_aperture": 0.5087719345092774
+        },
+        "sleep": {
+          "path": "/home/King/alohaX_lerobot_fork/.cache/poses/rest_pose.json",
+          "sha256": "4ad693b0d0790a78e0dad67f19e9c77c9c8533b7bebba1446f778bbbcc26b8a7",
+          "arm": "right_follower",
+          "calibrated_degrees": {
+            "waist": 0.703125,
+            "shoulder": 198.80859375,
+            "elbow": 189.31640625,
+            "forearm_roll": 2.724609375,
+            "wrist_angle": -113.115234375,
+            "wrist_rotate": 0.263671875
+          },
+          "sign": [
+            -1,
+            -1,
+            1,
+            -1,
+            1,
+            -1
+          ],
+          "offset_deg": [
+            -1.7578125,
+            90.0,
+            88.4375,
+            6.6796875,
+            0.0,
+            -2.109375
+          ],
+          "gripper_policy": "Preserve current opening; source gripper is not commanded"
+        }
+      },
+      "sequence_verified": false,
+      "sequence_verification_note": "Imported ALOHA targets; model limits, geometry and physical holding still require verification.",
+      "sleep_rad": [
+        -0.04295146206079795,
+        -1.8990682154024239,
+        1.760669059873186,
+        0.06902913545485385,
+        -1.9742332740088202,
+        -0.04141748127291231
+      ],
+      "sequence_authorized": true,
+      "sequence_authorization_note": "User explicitly requested copying the left sequence verification/authorization settings to the right on 2026-10-27. Physical sequence verification remains false, matching the left. Left source note: User explicitly approved live workflow, automatic powered opening startup and removal of sleep joint-limit rejection in this chat on 2026-10-16. This is operator authorization, not physical verification.",
+      "opening_gripper": 0.5087719345092774
+    }
+  },
+  "provenance": {
+    "lerobot_config": "/home/King/alohaX_lerobot_fork/lerobot/configs/robot/aloha.yaml",
+    "simulation_scene": "/home/King/Desktop/QuestController/scenes/dual_viperx_scene.xml",
+    "simulation_robot": "/home/King/Desktop/QuestController/scenes/dual_viperx.xml",
+    "usage": "Measured dual mounting: base centers 0.64 m apart, shoulder to shoulder and both forward. Supports one or both selected arms subject to existing commissioning checks.",
+    "mapping": "User-confirmed left mapping copied to the right. On 2026-10-27 the user explicitly requested copying the left mapping verification and sequence verification/authorization settings as well. Right port, calibration/fingerprint, electrical settings and measured mounting transform are preserved; no independent right physical test is claimed.",
+    "planes": "Simulation CLI defaults, relative to each base; table is 0.02 m below base origin.",
+    "verification": "Calibration hashes identify imported files only, not physical verification.",
+    "mounting_geometry": {
+      "source": "User measurement reported 2026-10-27",
+      "base_center_separation_m": 0.64,
+      "layout": "Shoulder to shoulder, same horizontal line and height, both facing forward",
+      "world_frame": "+X right, +Y forward, +Z up; origin midway between base centers in X/Y",
+      "base_height_note": "Existing model base Z=0.02 m above table retained; absolute mounting height was not newly measured"
+    },
+    "right_mapping_status_copy": {
+      "source_arm": "left",
+      "requested_by": "user",
+      "date": "2026-10-27",
+      "independent_right_physical_test": false
+    }
+  },
+  "teleop_catch_up": false,
+  "translation_scale": 1.0,
+  "rotation_scale": 1.0,
+  "teleop_joint_speed_deg_s": 18.0,
+  "teleop_joint_acceleration_deg_s2": 60.0
+}

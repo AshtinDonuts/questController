@@ -153,6 +153,7 @@ def main():
     opening_completed=False
     opening_started=None
     restart_active=False;restart_blocked=False;restart_preparing_at=None
+    gripper_recovery_pending=False
     restart_windows={s:RestartWindow() for s in sides}
     previous_grips={s:False for s in sides}
     grip_generation={s:0 for s in sides}
@@ -210,6 +211,7 @@ def main():
     def reset(now,hands,fresh):
         nonlocal state,reason,epoch,aligned,home_release_required,last_result,worker_armed,reset_at,align_requested
         if fault:
+            if gripper_recovery_pending:return restart(now)
             return 'Reset rejected: fault latched; K restarts recoverable IK/hold-drift/gripper-range faults'
         if recording_failed:return 'Reset rejected: recorder failed; resolve recording error and start a new session'
         if args.sequence and (parked or not opening_completed or state in ('OPENING','PARKING','PARKED')):
@@ -250,6 +252,7 @@ def main():
         nonlocal state,reason,epoch,aligned,align_requested,last_result,worker_armed,reset_at,fault
         nonlocal opening_pending,opening_completed,opening_started,restart_active,restart_preparing_at
         nonlocal planner_sock,planner_proc,planner_pending,home_release_required,episode_return,episode_prepared
+        nonlocal gripper_recovery_pending
         if not args.sequence:return 'Restart rejected: requires sequence mode and configured opening pose'
         if recording_failed:return 'Restart rejected: dataset recorder failed; resolve the error and start a new session'
         if stop_this_tick:return 'Restart rejected: stop has priority; release stop and retry K'
@@ -276,7 +279,7 @@ def main():
         processes.remove((old_sock,old_proc))
         planner_sock,child=pair();planner_proc=ctx.Process(target=planner.run,args=(child,profile,sides))
         planner_proc.start();child.close();processes.append((planner_sock,planner_proc))
-        epoch+=1;fault=False;aligned=False;align_requested=False;last_result=None
+        epoch+=1;fault=False;gripper_recovery_pending=False;aligned=False;align_requested=False;last_result=None
         worker_armed=False;planner_pending=False;home_release_required=True
         opening_pending=False;opening_completed=False;opening_started=None
         restart_active=True;restart_preparing_at=now;state='RESTART_PREPARING'
@@ -290,6 +293,8 @@ def main():
         nonlocal restart_active,restart_preparing_at,home_release_required,release_pending,discard_return_pending
         if recorder is None:return 'Recording is not enabled'
         if recording_failed or recorder.error:return 'Recording rejected: '+str(recorder.error)
+        if command=='record-next' and fault and gripper_recovery_pending and not stopping and not exit_requested:
+            return restart(now)
         if stop_this_tick or fault or stopping or exit_requested:return 'Recording rejected: stop/fault/exit has priority'
         if command=='record-toggle':
             from .recording_status import recording_toggle_command
@@ -368,7 +373,7 @@ def main():
                     if server:server.publish(dict(warmup,type='status',hardware=True,record=True))
                     last_progress=time.monotonic()
                 if recorder.error:raise RuntimeError(recorder.error)
-                if time.monotonic()>deadline:raise RuntimeError('Recording camera warmup timed out')
+                if time.monotonic()>deadline:raise RuntimeError(recorder.diagnostic_error('Recording camera warmup timed out'))
                 time.sleep(.01)
         for s in sides:
             workers[s]=spawn_worker(args.profile.resolve(),s,args.mode,
@@ -420,6 +425,8 @@ def main():
                     elif msg['type']=='restart_rejected':
                         hold(s+': Restart rejected: '+msg['reason'])
                     elif msg['type']=='fault':
+                        if msg.get('code')=='gripper_range' and msg.get('recoverable') is True:
+                            gripper_recovery_pending=True
                         event('worker_fault',side=s,**msg); hold(s+': '+msg['reason'],True,
                             recoverable=msg.get('code') in ('hold_drift','gripper_range') and msg.get('recoverable') is True)
                     else:
@@ -661,6 +668,11 @@ def main():
                     y_since=None
             elif state in ('HOMING','OPENING','PARKING','RELEASING'):
                 mode={'HOMING':'home','OPENING':'opening','PARKING':'sleep','RELEASING':'release'}[state]
+            # Apply the recorder gate before admitting results as well as before
+            # submitting jobs: otherwise stationary hold results are discarded
+            # against teleop mode and armed workers expire their last target.
+            if recorder and recorder.phase in ('starting','pausing','paused','resuming') and mode!='align':
+                mode='hold'
             for s,(sock,_) in workers.items():
                 gripping=bool(hands[s] and hands[s]['grip'])
                 if gripping!=previous_grips[s]:grip_generation[s]+=1

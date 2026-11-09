@@ -45,6 +45,20 @@ def test_unprepared_teleop_is_not_reported_as_powered_hold():
     assert 'Motion held' not in p['summary']
 
 
+def test_rejected_save_is_visible_without_claiming_recorder_failure_or_success():
+    why='Alignment gap exceeds tolerance: streams/cameras/left_wrist/rgb (142.3 ms)'
+    p=progress(state='HOLD',snapshot=dict(phase='finished',last_status='rejected',save_rejection=why))
+    assert p['title']=='EPISODE NOT SAVED'
+    assert p['saved']==3
+    assert p['recording_error'] is None
+    assert why in p['summary'] and why in status_markdown(p)
+    assert 'new attempt' in p['hint']
+    assert 'Motion held' not in p['summary']
+    p=progress(state='FAULT',reason='Motor fault',snapshot=dict(phase='finished',last_status='rejected',save_rejection=why))
+    assert p['title']=='STOPPED / FAULT'
+    assert p['message']=='Motor fault'
+
+
 @pytest.mark.parametrize('options,expected',[
     (dict(state='OPENING',returning=True,snapshot=dict(phase='finished')),'RETURNING TO OPENING'),
     (dict(state='PARKING',exiting=True,snapshot=dict(phase='saving')),'SLEEPING'),

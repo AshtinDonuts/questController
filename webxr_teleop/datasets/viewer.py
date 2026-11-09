@@ -1,4 +1,5 @@
 """Disposable Rerun display. Preview loss never drops source recording data."""
+import inspect
 import multiprocessing as mp
 import os
 from pathlib import Path
@@ -24,7 +25,9 @@ def blueprint(cameras):
             for stream in camera['streams']
         )))
     rows.append(rrb.TimeSeriesView(name='Robot feedback', origin='/robot'))
-    return rrb.Blueprint(rrb.Vertical(*rows), auto_layout=False, auto_space_views=False)
+    # Rerun 0.22 (NumPy 2) renamed the 0.16 acquisition API's argument.
+    auto_views = 'auto_views' if 'auto_views' in inspect.signature(rrb.Blueprint).parameters else 'auto_space_views'
+    return rrb.Blueprint(rrb.Vertical(*rows), auto_layout=False, **{auto_views: False})
 
 
 def run(messages, cameras, statuses):

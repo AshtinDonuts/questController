@@ -26,6 +26,10 @@ class RecorderClient:
         child_data.close()
         self.timeout = timeout
         self.last_status = time.monotonic()
+        # Interpreter imports and camera/preview initialization precede the
+        # first heartbeat. Match the supervisor's bounded warmup allowance;
+        # once any status arrives, enforce the configured runtime watchdog.
+        self.awaiting_first_status = True
         self.pending = None
         self.phase = 'warming'
         self.status = dict(phase='warming', saved=0)
@@ -74,8 +78,14 @@ class RecorderClient:
     def sample(self, kind, **value):
         if self.error:
             return
-        self.sample_seq += 1
-        if not send(self.data, dict(seq=self.sample_seq, kind=kind, **value)):
+        # Only successfully queued messages belong to the ordered stream and
+        # finish's through_seq barrier. Outside capture these are preview-only:
+        # encoder finalization may briefly saturate the socket without losing
+        # any episode sample. Keep capture/transition delivery strict.
+        seq = self.sample_seq + 1
+        if send(self.data, dict(seq=seq, kind=kind, **value)):
+            self.sample_seq = seq
+        elif self.phase not in ('warming', 'idle', 'saving', 'finished'):
             self.error = 'Recorder transport overflow'
 
     def poll(self):
@@ -86,6 +96,7 @@ class RecorderClient:
             messages = []
             self.error = self.error or str(exc)
         for message in messages:
+            self.awaiting_first_status = False
             self.last_status = now
             previous_pause=self.status.get('pause_ns')
             self.status = message
@@ -106,24 +117,35 @@ class RecorderClient:
                 self.error = self.error or message['error']
         if self.pending:
             send(self.control, self.pending)
-            if now-self.pending_since > max(5, self.timeout):
+            saving = self.pending['op'] == 'finish' and self.status.get('phase') == 'saving'
+            if not saving and now-self.pending_since > max(5, self.timeout):
                 self.error = self.error or 'Recorder transition acknowledgement timed out'
         if self.process.poll() is not None and not self.error:
             self.error = 'Recorder process exited'
         if self.process.poll() is not None:
             self.phase='failed'
-        elif now-self.last_status > self.timeout:
-            self.error = self.error or 'Recorder heartbeat expired'
+        elif now-self.last_status > (max(10, self.timeout) if self.awaiting_first_status else self.timeout):
+            self.error = self.error or self.diagnostic_error(
+                'Recorder startup heartbeat timed out' if self.awaiting_first_status else 'Recorder heartbeat expired')
         if self.error and self.end_ns is None and self.start_ns is not None:
             self.end_ns = time.monotonic_ns()
             self.status = dict(self.status, end_ns=self.end_ns)
         return self.status
 
+    def diagnostic_error(self, reason):
+        cameras = self.status.get('cameras', {})
+        details = [f"{name} ({c.get('backend', 'camera')} device {c.get('device', 'unknown')}): "
+                   f"{c.get('error') or c.get('stage', 'no fresh frames')}"
+                   for name, c in cameras.items() if not c.get('healthy')]
+        return reason + ('; cameras not ready: ' + '; '.join(details)
+                         + '. Check camera USB connections/power and configured device identifiers.' if details else '')
+
     def close(self):
         # This wait runs only after motor workers have entered shutdown holds.
+        # Video finalization may outlast ordinary recorder shutdown.
         send(self.control, dict(op='shutdown', request_id=uuid.uuid4().hex, through_seq=self.sample_seq))
         try:
-            self.process.wait(timeout=5)
+            self.process.wait(timeout=120 if self.phase == 'saving' else 5)
         except subprocess.TimeoutExpired:
             self.process.terminate()
             try:

@@ -1,0 +1,6 @@
+# Native LeRobot v3 recorder: use a separate Python 3.12+ environment.
+# Do not install into the existing motor-driver or HDF5 acquisition environment.
+-r requirements-dataset-export.txt
+pyrealsense2==2.58.4.10922
+# 0.16 requires NumPy <2; this release supports LeRobot's NumPy 2.
+rerun-sdk==0.22.1

@@ -73,3 +73,22 @@ Encoder feedback now has separate observation and command policies:
 Commands never extend beyond the calibrated motor endpoints, including exact-encoder hold and startup raw preloading. Startup refuses a gripper excursion beyond two counts before issuing goals/enabling torque; a large encoder jump cannot be converted into a large projected startup goal. No calibration file, current, gain or force setting is changed. This change addresses the software reaction, not the unverified physical cause of lost grip.
 
 The update requires one full application relaunch; K cannot revive a motor worker that already exited under the previous code. The old offending-frame visibility gap is closed: diagnostic events/faults now include raw count, unclamped aperture, endpoint excursion and classification.
+
+## Retry after a gripper-range fault (2026-11-07)
+
+The experimental closing-lead limiter and `gripper_closing_lead` configuration
+have been removed. Gripper motion again uses the existing trigger trajectory,
+speed and acceleration settings, without measured-aperture lead limiting.
+
+A recoverable gripper-range fault aborts the current episode and holds both arms.
+Once encoder feedback is back inside the valid/tolerated range and stationary
+for 0.3 seconds, **R/reset**, **K/restart**, or **next episode** can explicitly
+request the checked return to the opening pose. Reset/next now use the same
+recovery path as K, rather than rejecting solely because the fault is latched.
+Re-align and start a replacement episode after READY; the aborted attempt is not
+counted as a saved episode. Recovery preserves the measured gripper aperture.
+
+Invalid gripper feedback, stale feedback, hardware/current faults, recorder
+failure and unsafe return paths still block recovery. This change does not
+prevent a slipped object or sudden closure. A full application restart is
+required to load it; no live hardware was launched during implementation.
