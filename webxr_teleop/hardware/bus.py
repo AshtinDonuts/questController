@@ -7,6 +7,7 @@ import time
 from .core import JOINTS, MOTORS
 from .gripper import current_cap, validate_calibration, gripper_speed, gripper_acceleration, feedback_aperture
 from .motion import motor_profile_counts, VELOCITY_UNIT_DEG_S, ACCELERATION_UNIT_DEG_S2
+from .diagnostics import SerialDiagnostics, session_metadata
 
 
 class MockBus:
@@ -102,6 +103,8 @@ class LeRobotBus:
             ph = self.bus.port_handler
             ph.ser.write_timeout = .020
             ph.setPacketTimeout = lambda length: ph.setPacketTimeoutMillis(20)
+            self.diagnostics = SerialDiagnostics(ph, self.bus.packet_handler)
+            self.diagnostic_metadata = session_metadata(self.cfg['port'])
             calibration = json.loads(open(self.cfg['calibration']).read())
             if calibration['motor_names'] != list(MOTORS):
                 raise ValueError('Calibration motor order mismatch')
@@ -118,7 +121,14 @@ class LeRobotBus:
         reader = self.dxl.GroupSyncRead(self.bus.port_handler, self.bus.packet_handler, addr, size)
         for n in names:
             reader.addParam(self.bus.motors[n][0])
-        comm = reader.txRxPacket()
+        diagnostics = getattr(self, 'diagnostics', None)
+        if diagnostics:
+            diagnostics.begin(name, [self.bus.motors[n][0] for n in names])
+        try:
+            comm = reader.txRxPacket()
+        finally:
+            if diagnostics:
+                diagnostics.finish()
         if comm != self.dxl.COMM_SUCCESS:
             raise ConnectionError(f'Read failed: {name}; comm={comm}; '
                                   f'motor_ids={[self.bus.motors[n][0] for n in names]}')

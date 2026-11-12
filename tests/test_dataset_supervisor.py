@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 @contextmanager
-def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, slow_planner=False, full_resolution=False, worker_hold_reason=None, worker_fault_code=None, slow_record_start=False):
+def supervisor(tmp_path, side='both', slow_opening=False, process_group=False, slow_planner=False, full_resolution=False, worker_hold_reason=None, worker_fault_code=None, slow_record_start=False, slow_camera_discovery=False):
     if not QUEST_PYTHON.exists() or not RECORD_PYTHON.exists():
         pytest.skip('Quest and recording interpreters required')
     probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
@@ -91,6 +91,21 @@ def delayed_init(self, *args, **kwargs):
     time.sleep(.4)
     original_init(self, *args, **kwargs)
 recorder.Episode.__init__ = delayed_init
+sys.argv = [sys.argv[2], *sys.argv[3:]]
+recorder.main()
+''')
+        recording_python.chmod(0o755)
+    if slow_camera_discovery:
+        recording_python=tmp_path/'slow_discovery_recorder'
+        recording_python.write_text(f'''#!{RECORD_PYTHON}
+import sys, time
+sys.path.insert(0, {str(ROOT)!r})
+from webxr_teleop.datasets import recorder
+original_check = recorder.check_realsense_devices
+def delayed_check(cameras):
+    time.sleep(1.5)
+    original_check(cameras)
+recorder.check_realsense_devices = delayed_check
 sys.argv = [sys.argv[2], *sys.argv[3:]]
 recorder.main()
 ''')
@@ -520,3 +535,15 @@ def test_quest_a_slow_record_start_keeps_workers_armed(tmp_path):
         asyncio.run(exercise(port,control,scenario,start=False))
     rows=[json.loads(line) for line in (tmp_path/'session/hardware.jsonl').read_text().splitlines()]
     assert not any(row['event']=='hold' and 'expired' in row.get('reason','').lower() for row in rows)
+
+
+def test_camera_discovery_longer_than_runtime_heartbeat_can_start(tmp_path):
+    with supervisor(tmp_path,'left',slow_camera_discovery=True) as (_,port,control):
+        async def scenario(state,wait,align):
+            status=await asyncio.to_thread(control)
+            assert status['state']=='ARMED',status
+            assert status['recording']['phase']=='idle',status
+            await asyncio.to_thread(control,'record-start')
+            status=await wait(lambda s:s['recording']['phase']=='recording')
+            assert status['state']=='ARMED',status
+        asyncio.run(exercise(port,control,scenario,start=False))

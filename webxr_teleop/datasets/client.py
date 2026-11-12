@@ -26,9 +26,11 @@ class RecorderClient:
         child_data.close()
         self.timeout = timeout
         self.last_status = time.monotonic()
-        # Interpreter imports and camera/preview initialization precede the
-        # first heartbeat. Match the supervisor's bounded warmup allowance;
-        # once any status arrives, enforce the configured runtime watchdog.
+        # Camera discovery can block after its first "checking connection"
+        # status. Bound the entire startup, then use the runtime heartbeat
+        # deadline only after the recorder has completed camera warmup.
+        self.startup_started = self.last_status
+        self.startup_complete = False
         self.awaiting_first_status = True
         self.pending = None
         self.phase = 'warming'
@@ -97,6 +99,8 @@ class RecorderClient:
             self.error = self.error or str(exc)
         for message in messages:
             self.awaiting_first_status = False
+            if message['phase'] != 'warming':
+                self.startup_complete = True
             self.last_status = now
             previous_pause=self.status.get('pause_ns')
             self.status = message
@@ -124,9 +128,14 @@ class RecorderClient:
             self.error = 'Recorder process exited'
         if self.process.poll() is not None:
             self.phase='failed'
-        elif now-self.last_status > (max(10, self.timeout) if self.awaiting_first_status else self.timeout):
-            self.error = self.error or self.diagnostic_error(
-                'Recorder startup heartbeat timed out' if self.awaiting_first_status else 'Recorder heartbeat expired')
+        elif not self.startup_complete:
+            # Heartbeats must not indefinitely extend an unready startup.
+            if now-self.startup_started > max(10, self.timeout):
+                self.error = self.error or self.diagnostic_error(
+                    'Recorder startup heartbeat timed out' if self.awaiting_first_status
+                    else 'Recorder camera startup timed out')
+        elif now-self.last_status > self.timeout:
+            self.error = self.error or self.diagnostic_error('Recorder heartbeat expired')
         if self.error and self.end_ns is None and self.start_ns is not None:
             self.end_ns = time.monotonic_ns()
             self.status = dict(self.status, end_ns=self.end_ns)

@@ -395,7 +395,9 @@ def main():
         if not args.sequence: print('Space: powered stop. R: reset. Quest X: align. Hold Y 1 s: home. B: stop.',flush=True)
         if recorder:print('Dataset: Right arrow starts/saves; Left arrow discards; Up arrow returns to opening; Escape sleeps then exits. Quest A starts/saves/advances; B discards and returns; Space stops; X aligns.',flush=True)
         print('MP4:',output/'video/session.mp4',flush=True)
-        event('startup',mode=args.mode,profile=profile,sides=sides,enable_torque=args.startup,manual_start=args.manual_start,sequence=args.sequence,watchdog_policy='software_hold' if args.manual_start or args.sequence else 'motor_and_software')
+        from .diagnostics import session_metadata, capture_kernel_events
+        kernel_capture_started = False
+        event('startup',diagnostics=session_metadata(),mode=args.mode,profile=profile,sides=sides,enable_torque=args.startup,manual_start=args.manual_start,sequence=args.sequence,watchdog_policy='software_hold' if args.manual_start or args.sequence else 'motor_and_software')
         start=time.monotonic(); next_tick=start; demo_reset=False; demo_start=None
         last_print=0.; clients=[]
         settling={s:SettlingWindow() for s in sides}
@@ -429,6 +431,9 @@ def main():
                             gripper_recovery_pending=True
                         event('worker_fault',side=s,**msg); hold(s+': '+msg['reason'],True,
                             recoverable=msg.get('code') in ('hold_drift','gripper_range') and msg.get('recoverable') is True)
+                        if args.mode != 'mock' and msg.get('recoverable') is not True and not kernel_capture_started:
+                            kernel_capture_started = True
+                            capture_kernel_events(output)
                     else:
                         event('preflight',side=s,details=msg)
                 if proc.poll() is not None and not fault:

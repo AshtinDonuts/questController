@@ -61,7 +61,11 @@ opening streams. A missing device raises an error naming the camera and serial
 231622302829)`). Check USB connection/power and the configured serial. Acquisition
 errors identify the camera/device; heartbeat and warmup timeouts include the last
 reported stage of cameras that are not ready. Motor workers start only after
-recording camera warmup succeeds.
+recording camera warmup succeeds. The supervisor allows up to 10 seconds for
+warmup, including discovery after the initial “checking connection” status.
+The configured `heartbeat_timeout_s` applies after warmup completes; an early
+warming heartbeat does not shorten startup to the runtime deadline. Repeated
+warming updates cannot extend the startup deadline indefinitely.
 
 `webxr_teleop/datasets/example_mock.json` uses synthetic RGB/depth and is accepted
 only with mock motors. It is a test configuration, not a physical camera default.

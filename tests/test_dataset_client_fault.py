@@ -6,7 +6,7 @@ from webxr_teleop.hardware.recording_status import recording_status
 def client(monkeypatch):
     c=module.RecorderClient.__new__(module.RecorderClient)
     c.control=object();c.pending=None;c.timeout=1;c.last_status=0
-    c.awaiting_first_status=False
+    c.awaiting_first_status=False;c.startup_complete=True;c.startup_started=0
     c.phase='recording';c.status=dict(phase='recording',start_ns=1_000_000_000)
     c.start_ns=1_000_000_000;c.end_ns=None;c.error=None;c.sample_seq=3
     c.process=SimpleNamespace(poll=lambda:None)
@@ -27,9 +27,9 @@ def test_abort_freezes_display_even_without_recorder_ack(monkeypatch):
     assert c.status['end_ns']==3_000_000_000
 
 
-def test_startup_grace_ends_on_first_warming_heartbeat(monkeypatch):
+def test_startup_grace_survives_first_warming_heartbeat(monkeypatch):
     c=client(monkeypatch)
-    c.awaiting_first_status=True;c.phase='warming';c.start_ns=None
+    c.awaiting_first_status=True;c.startup_complete=False;c.phase='warming';c.start_ns=None
     c.poll()  # Three seconds of imports/initialization exceeds runtime timeout.
     assert c.error is None
     monkeypatch.setattr(module,'receive',lambda *a:[dict(phase='warming')])
@@ -38,12 +38,19 @@ def test_startup_grace_ends_on_first_warming_heartbeat(monkeypatch):
     monkeypatch.setattr(module,'receive',lambda *a:[])
     monkeypatch.setattr(module.time,'monotonic',lambda:4.1)
     c.poll()
+    assert c.error is None
+    monkeypatch.setattr(module,'receive',lambda *a:[dict(phase='idle')])
+    c.poll()
+    assert c.startup_complete
+    monkeypatch.setattr(module,'receive',lambda *a:[])
+    monkeypatch.setattr(module.time,'monotonic',lambda:5.2)
+    c.poll()
     assert c.error=='Recorder heartbeat expired'
 
 
 def test_startup_without_heartbeat_is_bounded(monkeypatch):
     c=client(monkeypatch)
-    c.awaiting_first_status=True;c.phase='warming';c.start_ns=None
+    c.awaiting_first_status=True;c.startup_complete=False;c.phase='warming';c.start_ns=None
     monkeypatch.setattr(module.time,'monotonic',lambda:10.1)
     c.poll()
     assert c.error=='Recorder startup heartbeat timed out'
@@ -63,7 +70,7 @@ def test_blocked_camera_startup_reports_last_known_identity(monkeypatch):
 
 def test_process_exit_during_startup_fails_immediately(monkeypatch):
     c=client(monkeypatch)
-    c.awaiting_first_status=True;c.phase='warming';c.start_ns=None
+    c.awaiting_first_status=True;c.startup_complete=False;c.phase='warming';c.start_ns=None
     c.process=SimpleNamespace(poll=lambda:1)
     c.poll()
     assert c.error=='Recorder process exited'
@@ -185,3 +192,28 @@ def test_inactive_preview_backpressure_is_not_a_capture_fault(monkeypatch):
         c.sample('status',value={})
         assert c.error is None,phase
         assert c.sample_seq==3
+
+
+def test_warming_heartbeats_cannot_extend_absolute_startup_deadline(monkeypatch):
+    c=client(monkeypatch);c.startup_complete=False;c.awaiting_first_status=True
+    c.phase='warming';c.start_ns=None
+    monkeypatch.setattr(module,'receive',lambda *a:[dict(phase='warming',cameras={
+        'right_wrist':dict(healthy=False,device='218622274350',backend='realsense',stage='checking connection')})])
+    monkeypatch.setattr(module.time,'monotonic',lambda:9.9)
+    c.poll()
+    assert c.error is None
+    monkeypatch.setattr(module.time,'monotonic',lambda:10.1)
+    c.poll()
+    assert 'Recorder camera startup timed out' in c.error
+    assert 'right_wrist' in c.error
+
+
+def test_runtime_warming_message_does_not_restore_startup_grace(monkeypatch):
+    c=client(monkeypatch)
+    monkeypatch.setattr(module,'receive',lambda *a:[dict(phase='warming')])
+    c.poll()
+    assert c.startup_complete
+    monkeypatch.setattr(module,'receive',lambda *a:[])
+    monkeypatch.setattr(module.time,'monotonic',lambda:4.1)
+    c.poll()
+    assert c.error=='Recorder heartbeat expired'

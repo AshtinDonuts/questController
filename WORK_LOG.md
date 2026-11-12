@@ -159,3 +159,94 @@ Validation: both exporter integration tests passed with cache access after sandb
 - 2026-11-09T17:47:08+10:30 | Implementation | Prepared operator-requested checkpoint of current source, tests, documentation, launch/recording configs and calibration provenance before startup-watchdog changes.
   Scope: tracked changes plus relevant untracked project files; recording datasets, training data and generated outputs excluded.
   Validation: git diff --check passed; checkpoint preserves current state, not a claim that all existing changes passed full regression. No hardware launched.
+
+- 2026-11-09T17:48:49+10:30 | Fix | After checkpoint 305ead7, kept recorder startup grace active through camera warmup instead of ending it on the initial checking-connection heartbeat.
+  Files: datasets/client.py, tests/test_dataset_client_fault.py, tests/test_dataset_supervisor.py, docs/dataset_recording.md; absolute startup deadline prevents indefinite warmup, completed startup latches runtime watchdog even if a later status says warming.
+  Validation: 30 client/status tests and delayed 1.5-second discovery mock integration passed; startup timeout, runtime 1-second expiry and child-exit behavior covered; git diff --check passed. No hardware launched; camera disconnection remains a separate issue.
+
+2026-11-09T18:05:45+10:30 Implementation — Added offline cupstack MuJoCo action/state replay and synchronized recorded-video comparison.
+Files: lishan_data/replay_cupstack_sim.py, lishan_data/SIM_REPLAY.md, lishan_data/sim_replay/episode_029/*; preserves dataset joint radians and recorded base transforms; no motor/supervisor imports.
+Validation: episode 29, 540 frames/36 s at 15 Hz; exact joint assignment, no model joint-limit violations; MP4 inspected; browser control failed, playback URL served on loopback; cups/contact dynamics unmodeled.
+
+2026-11-09T18:08:05+10:30 Implementation — Added action-only episode 29 replay video and autoplay/loop replay page at operator request.
+Files: lishan_data/sim_replay/episode_029/action.mp4, action.html; extracted the command panel from the validated simulation video without changing trajectory or timing.
+Validation: ffprobe confirms 640x480, 540 frames, 36 seconds; browser automation still fails, so direct local video and replay-page links are provided.
+
+2026-11-09T18:12:56+10:30 Implementation — Extracted cupstack video first frames and generated per-cup spatial heatmaps using operator-specified red/left, yellow/middle, green/right labels.
+Files: lishan_data/cupstack_first_frames/ (108 first frames, manifest, annotated montage, center CSV, reproducible analysis, combined and individual heatmaps, README); frozen files 000–035, top view only for spatial counts.
+Validation: 108/108 frames decoded; 36 top views each have 3 detections; full annotated montage visually reviewed; each KDE sums to 1 with common scale; pixel cup-opening centers only, no world calibration.
+
+2026-11-09T18:22:30.478221+10:30 Debug — Attempted read-only Quest battery query via ADB.
+Affected files: WORK_LOG.md; sandbox blocked ADB startup, and elevated retry reported insufficient device permissions (plugdev).
+Validation: battery level unavailable; no device settings or hardware motion changed.
+
+2026-11-09T20:36:46+10:30 — Debug: Verified dataset-recording command and hardware endpoint availability for operator handoff.
+Files inspected: QUICKSTART.md, RECORDING_WORKFLOW.md, launch.json, recording.json, lishan_cupstack.json, hardware/run.py; no runtime configuration changed.
+Validation: host checks found no hardware supervisor/worker, control socket absent, port 8443 without listener; recorder interpreters exist. No hardware launched.
+
+2026-11-09T20:37:46+10:30 — Debug: Rechecked endpoints before repeating dataset-recording launch command.
+Validation: host port 8443 free, control socket absent, no matching hardware supervisor/worker; no cleanup or hardware launch performed.
+
+2026-11-10T10:18:06+10:30 Implementation — Added lishan_eggpack recording preset.
+Files: lishan_eggpack.json; LeRobot v3, 60-second episodes, ./lishan_data/eggpack, local/lishan-eggpack; inherited cupstack three-camera 15 FPS setup and 85-episode limit.
+Validation: project load_config accepted the preset; format, duration and repo ID assertions passed. No hardware launched.
+
+2026-11-10T13:16:08+10:30 Debug — Reviewed latest run hardware_20261110_130440_802991; right worker Present_Position group read failed at 547.921 s with comm=-3002 (SDK COMM_RX_CORRUPT).
+Evidence: hardware.jsonl worker_fault at line 54937; IDs 1–9 are the requested group, not proof each motor failed; supervisor latched FAULT, left entered HOLD, right physical hold unconfirmed.
+Validation: read-only log/source/installed-SDK inspection; restart and sleep rejected, shutdown recorded ~33 s later. Physical cause unresolved; no hardware accessed or runtime changes.
+
+2026-11-10T13:20:13+10:30 Debug — Assessed logging gaps for latest right-arm communication fault using bus/worker and installed Dynamixel SDK source.
+Findings: group read discards per-ID failure progress; COMM_RX_CORRUPT covers CRC mismatch and partial-packet timeout; exception hold attempt outcome is discarded.
+Validation: source inspection only; proposed bounded packet history, transaction/hold diagnostics, USB event correlation and sampled motor health; no runtime changes or hardware access.
+
+2026-11-10T13:29:01+10:30 Implementation — Added low-overhead hardware fault diagnostics: bounded serial history, failed ID/packet classification, transaction timing, explicit emergency-hold outcomes, startup USB/version/clock metadata and fault-only background kernel capture.
+Files: hardware/diagnostics.py, bus.py, worker.py, run.py; tests/test_hardware_diagnostics.py; docs/hardware_fault_diagnostics.md. No extra motor polling/retries or control-loop disk writes; history capped at 64×128-byte chunks.
+Validation: 142 tests passed, 1 SDK test skipped in quest_ros; installed LeRobot SDK valid/CRC/partial-packet injections passed separately. Synthetic median +31.41 us/20 ms cycle (0.157%); compile/diff checks passed; sandbox socket tests required elevated offline rerun. No hardware accessed; live timing unverified.
+
+2026-11-10T13:33:52+10:30 Debug — Investigated latest unexpected hold in hardware_20261110_133029_376061: right Quest controller missing at 13:32:49.927 (+138.500 s), line 13906.
+Evidence: packet 1832024 included both hands; 1832025 retained fresh left but right=None; right recovered after 1.100 s, reset/resume followed ~5.16 s after hold; both motor workers acknowledged HOLD with no worker_fault observed.
+Validation: read-only logs/frontend/server inspection; null/invalid/emulated right pose cause is not distinguished in existing telemetry. Later latest holds were normal episode finalization/gripper opening (lines 18440/18504); no hardware accessed or runtime changes.
+
+2026-11-10T13:36:24+10:30 Debug — Attempted read-only Quest controller battery query via ADB.
+Evidence: sandbox blocked ADB daemon startup; elevated adb devices -l succeeded but returned no attached devices.
+Validation: left/right controller battery levels unavailable; no Quest settings, motor access or runtime configuration changes.
+
+2026-11-10T13:37:23+10:30 Debug — Retried controller battery inspection after operator connected Quest over USB.
+Evidence: elevated adb devices -l detects headset but reports no permissions because user King is not in plugdev.
+Validation: battery levels remain unavailable; no device settings, host permissions or hardware runtime changed.
+
+2026-11-10T13:37:48+10:30 Debug — Attempted operator-requested addition of King to plugdev with sudo -n usermod -aG plugdev King.
+Evidence: sudo refused because an administrator password is required; no group membership was changed.
+Validation: USB permission issue remains unresolved; operator must run the command in an interactive terminal and refresh login.
+
+2026-11-10T13:38:33+10:30 Debug — Confirmed King now belongs to plugdev; retried Quest battery access using a separate ADB server on port 5038 under sg plugdev.
+Evidence: new-group ADB still reports USB permission denied and suggests missing udev rules; existing port-5037 server was not restarted.
+Validation: group update verified, device access and battery levels remain unavailable; no USB rules or device settings changed.
+
+2026-11-10T15:37:55+10:30 Implementation — Created lishan_bowls.json for LeRobot v3 recording, 15 FPS and 65 episodes.
+Files: lishan_bowls.json; inherited existing bowls task, three cameras and 60-second episode limit; local/lishan-bowls repo ID. Existing bowls directory contains legacy recording folders, so selected separate ./lishan_data/bowls_lerobot_v3 destination.
+Validation: project loader and format/FPS/count assertions passed; destination absent; original bowls preset/data untouched. No hardware launched.
+
+2026-11-10T16:49:47+10:30 Debug — Investigated latest fault in hardware_20261110_162449_240137 at 16:48:12.456 (+1401.205 s), hardware.jsonl line 140504: planner IK/DAQP failed to find a solution.
+Evidence: no worker_fault events; both motor feedback streams and controllers fresh; right grip active, left frozen; last successful right target plane_limited=true, IK position error 3.96 mm and rotation error 0.0232 rad. Same planner error also occurred at 16:42:41.
+Validation: read-only log/source inspection; restart accepted then returned to starting pose and recording resumed. Workspace constraint involvement is a hypothesis; failing solver inputs/active constraints are not recorded. No hardware access or runtime changes.
+
+2026-11-10T18:51:30+10:30 Debug — Compared first top-camera frames of latest ten saved bowls LeRobot episodes (zero-based 37–46), generating unregistered overlays and static-background displacement analysis.
+Artifacts: outputs/top_alignment_20261110/{manifest.json,analyze.py,measure.py,flow.py,first_frames.jpg,key_overlays.png,first_last_blink.gif,registration.json,optical_flow.json,report.txt}; strongest framing changes 37→38 and 38→39; small 41→42 change, 42–46 background stable in sampled frames.
+Validation: 10/10 RGB frames decoded at 640×480; overlays visually inspected; SIFT/RANSAC corroborated by optical flow restricted to fixed background. First→last background shift ~10 px right/7 px up; absolute calibration and movement time within episodes unverified. Dataset/hardware unchanged.
+
+2026-11-10T18:52:19+10:30 Debug — Exported individual unregistered top-camera overlays for episodes 37→38 and 38→39 at operator request.
+Artifacts: outputs/top_alignment_20261110/red_cyan_037_038.png, red_cyan_038_039.png and overlay_038_039.png; earlier grayscale in red, later in cyan.
+Validation: both 640×480 source pairs decoded; no image registration or dataset modifications.
+
+2026-11-12T13:47:37+10:30 Debug — Investigated cupstack dataset location.
+Files: lishan_cupstack.json, webxr_teleop/datasets/lerobot_recording.py, lishan_data/wamu_real/cupstack_lerobot.
+Validation: configured output is cupstack/lerobot; curated dataset contains 85 episodes; relocation provenance unconfirmed.
+
+2026-11-12T13:48:12+10:30 Implementation — Prepared source, presets, documentation and dataset utilities for commit and push.
+Files: staged project changes; large datasets, generated outputs/training artifacts and empty upload placeholder excluded.
+Validation: diff whitespace check passed; offline quest_ros tests with plugin autoload disabled: 42 passed, 1 skipped, 4 failed due to missing h5py; no hardware launched.
+
+2026-11-12T13:53:02+10:30 Implementation — Prepared an offline ACT training entry point for the curated eggpack v3 dataset.
+Files: scripts/train_eggpack_act.sh, docs/eggpack_act_training.md; uses 79 episodes and documents legacy fork incompatibility and dataset review caveat.
+Validation: CLI options inspected; attempted CPU trainer stopped before data loading because accelerate is missing; CUDA driver unavailable, training remains unverified.

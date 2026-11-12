@@ -11,6 +11,7 @@ from .bus import MockBus, LeRobotBus, SoftwareHoldBus
 from .ipc import send, receive
 from .motion import motion_settings, latest_motion_messages, controller_source_fresh, ClutchBarrier
 from .gripper import gripper_speed, gripper_acceleration
+from .diagnostics import clock_anchor
 
 HOLD_DRIFT_RAD = math.radians(5)
 
@@ -97,7 +98,8 @@ def main():
             bus.write(q)
             bus.configure_motion_caps()
             bus.watchdog()
-        send(sock,dict(type='preflight',details=getattr(bus,'preflight',{'mock':True})))
+        send(sock,dict(type='preflight',details=getattr(bus,'preflight',{'mock':True}),
+                       diagnostics=getattr(bus,'diagnostic_metadata',None)))
         drift_since=None; drift_fault=False; torque_disabled=False; gripper_range_fault=False
         previous_gripper_feedback_state=None
         barrier=ClutchBarrier();executed=None;last_target=q[:];previous_goal=q[:]
@@ -256,15 +258,29 @@ def main():
             time.sleep(max(0.,PERIOD-(time.monotonic()-start)))
     except BaseException as exc:
         confirmed = False
+        # Freeze the failing transaction before emergency hold/cleanup adds traffic.
+        diagnostics = getattr(bus, 'diagnostics', None)
+        try:
+            diagnostic_snapshot = diagnostics.snapshot() if diagnostics else None
+        except Exception as diagnostic_exc:
+            diagnostic_snapshot = dict(unavailable=repr(diagnostic_exc))
+        feedback_age = time.monotonic()-fresh
+        hold_attempt = dict(attempted=False, outcome='skipped', feedback_age_ms=feedback_age*1000,
+                            skip_reason='no bus/position, torque release, observe mode, or stale feedback')
         # No endless retries, no position recapture loop, no torque-off cleanup.
         if bus and q and not getattr(bus,'torque_release_attempted',False) and args.mode != 'observe' and time.monotonic()-fresh <= FEEDBACK_TTL:
             try:
-                bus.write(guard.hold(q,str(exc)))
+                hold_attempt.update(attempted=True, outcome='attempting', skip_reason=None,
+                                    started=clock_anchor())
+                wrote = bus.write(guard.hold(q,str(exc)))
+                hold_attempt['outcome'] = ('unchanged_goal_write_skipped' if wrote is False
+                                           else 'write_and_readback_succeeded')
                 # A write/readback alone does not prove physical settling.
                 confirmed = False
-            except Exception:
-                pass
-        send(sock,dict(type='fault',reason=str(exc),hold_confirmed=confirmed))
+            except Exception as hold_exc:
+                hold_attempt.update(outcome='failed', error=repr(hold_exc))
+        send(sock,dict(type='fault',reason=str(exc),hold_confirmed=confirmed,
+                       diagnostics=diagnostic_snapshot, hold_attempt=hold_attempt))
     finally:
         if bus:
             try:
