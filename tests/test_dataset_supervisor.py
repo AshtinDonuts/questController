@@ -9,13 +9,23 @@ import socket
 import ssl
 import subprocess
 import time
+import textwrap
 
 import pytest
 import websockets
 
 QUEST_PYTHON=Path('/home/King/miniconda3/envs/quest_ros/bin/python')
 RECORD_PYTHON=Path('/home/King/miniconda3/envs/lerobot/bin/python')
+EXPORT_PYTHON=Path(os.environ.get('QUEST_EXPORT_PYTHON', '/tmp/quest-lerobot-v3/bin/python'))
 ROOT=Path(__file__).resolve().parents[1]
+
+
+def check_recording(code, *paths, python=RECORD_PYTHON):
+    """Run dataset assertions with the recorder's dependencies, not ROS's."""
+    result = subprocess.run(
+        [str(python), '-c', textwrap.dedent(code), *(str(p) for p in paths)],
+        cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @contextmanager
@@ -276,24 +286,30 @@ def test_tracking_recovery_x_resumes_same_episode_and_timer(tmp_path,worker_expi
     assert not list((tmp_path/'dataset/aborted').glob('*.hdf5'))
     accepted=list((tmp_path/'dataset/accepted').glob('*.hdf5'))
     assert len(accepted)==1
-    import h5py
-    import numpy as np
-    from webxr_teleop.datasets.hdf5 import validate
-    validate(accepted[0])
-    with h5py.File(accepted[0],'r') as file:
-        events=[(int(t),json.loads(v)) for t,v in zip(file['events/t_ns'][:],file['events/json'][:])]
-        pauses=[t for t,v in events if v['kind']=='pause']
-        resumes=[t for t,v in events if v['kind']=='resume']
-        assert len(pauses)==len(resumes)==2
-        def check(_,obj):
-            if isinstance(obj,h5py.Group) and 't_ns' in obj:
-                for begin,end in zip(pauses,resumes):
-                    assert not np.any((obj['t_ns'][:]>=begin)&(obj['t_ns'][:]<end))
-        file['streams'].visititems(check)
-        from webxr_teleop.datasets.export_lerobot import alignment
-        grid,_,_=alignment(file)
-        for begin,end in zip(pauses,resumes):
-            assert not np.any((grid>=begin)&(grid<end))
+    check_recording("""
+        import json
+        import sys
+        from pathlib import Path
+        accepted = [Path(sys.argv[1])]
+        import h5py
+        import numpy as np
+        from webxr_teleop.datasets.hdf5 import validate
+        validate(accepted[0])
+        with h5py.File(accepted[0],'r') as file:
+            events=[(int(t),json.loads(v)) for t,v in zip(file['events/t_ns'][:],file['events/json'][:])]
+            pauses=[t for t,v in events if v['kind']=='pause']
+            resumes=[t for t,v in events if v['kind']=='resume']
+            assert len(pauses)==len(resumes)==2
+            def check(_,obj):
+                if isinstance(obj,h5py.Group) and 't_ns' in obj:
+                    for begin,end in zip(pauses,resumes):
+                        assert not np.any((obj['t_ns'][:]>=begin)&(obj['t_ns'][:]<end))
+            file['streams'].visititems(check)
+            from webxr_teleop.datasets.export_lerobot import alignment
+            grid,_,_=alignment(file)
+            for begin,end in zip(pauses,resumes):
+                assert not np.any((grid>=begin)&(grid<end))
+    """, accepted[0])
 
 
 @pytest.mark.parametrize('reason',['Command watchdog expired','Target expired before serial write'])
@@ -383,18 +399,30 @@ def test_two_episodes_hold_explicit_return_discard_and_resume(tmp_path,side):
             assert final['recording']['saved']==1
             assert final['recording']['last_status']=='discarded'
         asyncio.run(exercise(port,control,scenario))
-    from webxr_teleop.datasets.hdf5 import validate
     accepted=list((tmp_path/'dataset/accepted').glob('*.hdf5'))
     assert len(accepted)==1
-    validate(accepted[0])
-    import h5py
-    import numpy as np
-    with h5py.File(accepted[0],'r') as file:
-        assert np.max(np.ptp(file['streams/robot/left/observations/qpos'][:,:6],axis=0))>1e-5
-    assert len(list((tmp_path/'dataset/discarded').glob('*.hdf5')))==1
-    from webxr_teleop.datasets.export_lerobot import export
-    result=export(tmp_path/'dataset',tmp_path/'lerobot','local/mock-acceptance')
-    assert result['episodes'][0]['frames']>5
+    check_recording("""
+        import sys
+        from pathlib import Path
+        tmp_path = Path(sys.argv[1])
+        accepted = [Path(sys.argv[2])]
+        from webxr_teleop.datasets.hdf5 import validate
+        validate(accepted[0])
+        import h5py
+        import numpy as np
+        with h5py.File(accepted[0],'r') as file:
+            assert np.max(np.ptp(file['streams/robot/left/observations/qpos'][:,:6],axis=0))>1e-5
+        assert len(list((tmp_path/'dataset/discarded').glob('*.hdf5')))==1
+    """, tmp_path, accepted[0])
+    # The official v3 exporter has its own pinned environment.
+    check_recording("""
+        import sys
+        from pathlib import Path
+        tmp_path = Path(sys.argv[1])
+        from webxr_teleop.datasets.export_lerobot import export
+        result=export(tmp_path/'dataset',tmp_path/'lerobot','local/mock-acceptance')
+        assert result['episodes'][0]['frames']>5
+    """, tmp_path, python=EXPORT_PYTHON)
 
 
 @pytest.mark.parametrize('failure',['stop','recorder'])

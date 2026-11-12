@@ -250,3 +250,7 @@ Validation: diff whitespace check passed; offline quest_ros tests with plugin au
 2026-11-12T13:53:02+10:30 Implementation — Prepared an offline ACT training entry point for the curated eggpack v3 dataset.
 Files: scripts/train_eggpack_act.sh, docs/eggpack_act_training.md; uses 79 episodes and documents legacy fork incompatibility and dataset review caveat.
 Validation: CLI options inspected; attempted CPU trainer stopped before data loading because accelerate is missing; CUDA driver unavailable, training remains unverified.
+
+2026-11-12T14:16:06+10:30 Fix — Corrected interpreter selection in four supervisor dataset acceptance tests.
+Files: tests/test_dataset_supervisor.py; HDF5 assertions run in recording Python; v3 export runs in pinned export Python (QUEST_EXPORT_PYTHON override), preserving all assertions and subprocess error details.
+Validation: affected tests 4/4 passed; preceding regression run 44 passed, 1 skipped, 2 export-environment failures now fixed; git diff --check passed. Offline mock hardware only.
